@@ -51,11 +51,14 @@ class UserBot:
             me = await self.client.get_me()
             log.info(f"✅ UserBot: {me.first_name} (@{me.username})")
 
-            # AutoReply ulash
-            from auto_reply import AutoReply
-            self.auto_reply = AutoReply(self.client, bot_instance)
-            self.auto_reply.register_handlers()
-            log.info(f"✅ AutoReply: {self.auto_reply.get_status()}")
+            # AutoReply ulash (ixtiyoriy modul)
+            try:
+                from auto_reply import AutoReply
+                self.auto_reply = AutoReply(self.client, bot_instance)
+                self.auto_reply.register_handlers()
+                log.info(f"✅ AutoReply: {self.auto_reply.get_status()}")
+            except ImportError:
+                log.info("ℹ️ AutoReply moduli yo'q — o'tkazib yuborildi")
 
         except Exception as e:
             log.error(f"UserBot xatosi: {e}")

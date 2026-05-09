@@ -33,11 +33,21 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     twin  = DigitalTwin()
 
     # ── Ishga tushganda KB va Twin ni init qilish ────────────
+    # asyncio.get_event_loop().run_until_complete ishlatilmaydi!
+    # bot.py da main() ichida await qilinadi
     import asyncio
     async def _init_services():
         await kb.init()
         await twin.init()
-    asyncio.get_event_loop().run_until_complete(_init_services())
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Allaqachon running — task sifatida qo'shamiz
+            loop.create_task(_init_services())
+        else:
+            loop.run_until_complete(_init_services())
+    except Exception as e:
+        log.warning(f"Init services: {e}")
 
     def is_owner(msg: Message) -> bool:
         return msg.from_user.id == owner_id

@@ -1,111 +1,213 @@
 """
-Handlers — Bot buyruqlari va xabarlarni qayta ishlash
-Mexanik O'tkirbek uchun to'liq funksiyalar + ElevenLabs TTS
+Handlers v3.0 — O'tkirbek AI Agent
+Barcha funksiyalar: Vizual Defektoskopiya, HSE Audit, Sensor Tahlili,
+Digital Twin, Knowledge Base RAG, AutoPilot, AutoReply boshqaruvi
 """
 
-import os
-import re
-import logging
-import aiohttp
-import tempfile
+import os, re, logging, aiohttp, tempfile
 from datetime import datetime
 from aiogram import Dispatcher, F
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
 
-from database import Database
-from ai_services import AIServices
-from userbot import UserBot
-from tts_service import TTSService
+from database      import Database
+from ai_services   import AIServices
+from userbot       import UserBot
+from tts_service   import TTSService
 from mechanic_service import MechanicService
+from vision_service   import VisionService
+from knowledge_base   import KnowledgeBase
+from digital_twin     import DigitalTwin
 
-log = logging.getLogger(__name__)
-
+log        = logging.getLogger(__name__)
 OWNER_NAME = os.getenv("OWNER_NAME", "O'tkirbek")
 
 
 def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
                       userbot: UserBot, owner_id: int):
 
-    tts = TTSService()
-    mech = MechanicService()
+    tts   = TTSService()
+    mech  = MechanicService()
+    vis   = VisionService()
+    kb    = KnowledgeBase()
+    twin  = DigitalTwin()
+
+    # ── Ishga tushganda KB va Twin ni init qilish ────────────
+    import asyncio
+    async def _init_services():
+        await kb.init()
+        await twin.init()
+    asyncio.get_event_loop().run_until_complete(_init_services())
 
     def is_owner(msg: Message) -> bool:
         return msg.from_user.id == owner_id
 
-    # ── /start ────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════
+    #  BUYRUQLAR
+    # ════════════════════════════════════════════════════════
+
     @dp.message(Command("start"))
     async def cmd_start(msg: Message):
         if not is_owner(msg): return
         await msg.answer(
-            f"👋 *Salom, {OWNER_NAME}! Men sizning AI Agentingizman.*\n\n"
-            "🏭 _AGMK 3-mis boyitish fabrika mexanigi uchun_\n\n"
-            "🤖 Groq Llama 3 + Gemini 1.5 Flash + ElevenLabs TTS\n\n"
-            "*Asosiy imkoniyatlar:*\n"
-            "🔧 Texnik yordam va chertyo'j tahlili\n"
-            "🦺 Xavfsizlik checklisti va hodisa yo'riqnomasi\n"
-            "📊 Defekt akti, hisobot, xizmat xati\n"
-            "📐 Gidravlik/pnevmatik hisob-kitob\n"
-            "🎤 Ovoz → Matn va Matn → Ovoz (ElevenLabs)\n"
-            "✉️ Nomingizdan xabar + ovozli xabar yuborish\n"
-            "📝 Zametka, Vazifa, Xotira\n\n"
-            "/help — barcha buyruqlar"
+            f"👋 *Salom, {OWNER_NAME}! Men sizning Raqamli Egizagingizman.*\n\n"
+            f"🏭 _AGMK 3-mis boyitish fabrika mexanigi uchun_\n\n"
+            f"🧠 *AI Stack:* Groq Llama3 + Gemini 1.5 Flash + ElevenLabs\n\n"
+            f"*Nima qila olaman:*\n"
+            f"🔬 Uskunadagi nosozliklarni rasmdan aniqlash\n"
+            f"🦺 HSE auditi — PPE bor-yo'qligini tekshirish\n"
+            f"📊 Sensor ma'lumotlarini tahlil + prognoz\n"
+            f"📐 Chertyo'j o'qish (GOST, o'lchamlar, materiallar)\n"
+            f"📚 MBF-3 bilim bazasi (Warman, GMD/ABB, flotatsiya)\n"
+            f"🤖 AutoPilot — sizning nomingizdan suhbat\n"
+            f"📈 Digital Twin — uskunalar holati dashboard\n"
+            f"🎤 Ovozli xabar (ElevenLabs TTS)\n\n"
+            f"/help — barcha buyruqlar ro'yxati"
         )
 
-    # ── /help ─────────────────────────────────────────────────
     @dp.message(Command("help"))
     async def cmd_help(msg: Message):
         if not is_owner(msg): return
         await msg.answer(
-            "📖 *Buyruqlar ro'yxati:*\n\n"
+            "📖 *Buyruqlar:*\n\n"
+            "🔬 *VIZUAL TAHLIL (rasm yuboring):*\n"
+            "`[rasm] defekt` → nosozlik tahlili\n"
+            "`[rasm] hse` → xavfsizlik auditi\n"
+            "`[rasm] sensor` → sensor skrinshot tahlili\n"
+            "`[rasm] chertyo'j` → kengaytirilgan tahlil\n\n"
+            "📊 *DIGITAL TWIN:*\n"
+            "`/dashboard` — barcha uskunalar holati\n"
+            "`/equipment` — uskunalar ro'yxati\n"
+            "`Holat: nasos_1, vib=3.2, temp=65` → yangilash\n"
+            "`Prognoz: nasos_1` → AI prognoz\n"
+            "`Tamirlash: nasos_1, turi=TO-2, ish=muhrlar almashtirildi`\n\n"
+            "📚 *BILIM BAZASI:*\n"
+            "`KB: warman nasos kaviatsiya` → qidiruv\n"
+            "`/kb` — kategoriyalar\n"
+            "[PDF] yuborish → bilim bazasiga qo'shish\n\n"
+            "🤖 *AUTOPILOT:*\n"
+            "`/autopilot_on` — yoqish (hammaga)\n"
+            "`/autopilot_whitelist` — faqat ruxsatlilarga\n"
+            "`/autopilot_off` — o'chirish\n"
+            "`/autopilot_pause 60` — 60 daqiqa to'xtatish\n"
+            "`/autopilot_status` — holat\n\n"
             "🔧 *TEXNIK YORDAM:*\n"
-            "`Nasos ishlamayapti` → muammo tahlili\n"
-            "`Kompressor tekshirish tartibi` → checklist\n"
-            "`Konveyerdagi muammo` → sabab + yechim\n\n"
-            "🦺 *XAVFSIZLIK:*\n"
-            "`Elektr ishi oldidan xavfsizlik` → checklist\n"
-            "`Balandlikda ishlash xavfsizligi`\n"
-            "`Baxtsiz hodisa bo'ldi` → ko'rsatma\n"
-            "`Yong'in chiqdi` → avariya ko'rsatmasi\n\n"
-            "📐 *HISOB-KITOB:*\n"
-            "`Gidravlik hisob: sarif=50, diametr=100, uzunlik=200`\n"
-            "`Pnevmatik hisob: hajm=10, bosim=8, vaqt=5`\n"
-            "`Podshipnik resursi: C=50, P=20, n=1500`\n\n"
+            "`Nasos ishlamayapti` / `Kompressor muammo`\n"
+            "`Elektr ishi xavfsizligi` / `Yong'in chiqdi`\n"
+            "`Gidravlik hisob: sarif=50, diametr=100, uzunlik=200`\n\n"
             "📋 *HUJJATLAR:*\n"
-            "`Defekt akti: nasos №3 muhrlar yeyilgan`\n"
-            "`Ish hisoboti: bugungi smenada...`\n"
-            "`Xizmat xati: kimga=sexboshlig'i, mavzu=...`\n"
-            "`PPR jadvali: nasos, kompressor, konveyер`\n\n"
-            "🎤 *OVOZLI XABAR YUBORISH (ElevenLabs):*\n"
-            "`Azizga ovozli yoz: kechikmoqdaman`\n"
-            "`Shodiга ovoz: yig'ilishga 10 daqiqada keling`\n\n"
-            "✉️ *MATNLI XABAR:*\n"
-            "`Azizga yoz: ertaga uchrashemiz`\n"
-            "`@username ga yoz: salom`\n\n"
-            "📝 *ESLATMALAR:*\n"
-            "`Eslab qol: shartnoma 15-may`\n"
-            "`Vazifa: hisobot tayyorla, muddat 10-may`\n"
-            "`Vazifa 3 bajarildi`\n\n"
-            "💱 `Dollar kursi` | 🌤 `Toshkentda ob-havo`\n"
-            "/tasks /notes /report /memory /cleanup\n"
-            "/voices — ElevenLabs ovozlari"
+            "`Defekt akti:` / `Ish hisoboti:` / `PPR jadvali:`\n\n"
+            "🎤 *OVOZLI XABAR:*\n"
+            "`Azizga ovozli yoz: 15 daqiqa kechikaman`\n\n"
+            "/tasks /notes /report /memory /cleanup /voices"
         )
 
-    # ── Buyruqlar ─────────────────────────────────────────────
+    # ── Digital Twin ─────────────────────────────────────────
+    @dp.message(Command("dashboard"))
+    async def cmd_dashboard(msg: Message):
+        if not is_owner(msg): return
+        wait = await msg.answer("📊 _Dashboard yuklanmoqda..._")
+        result = await twin.get_dashboard()
+        await wait.edit_text(result)
+
+    @dp.message(Command("equipment"))
+    async def cmd_equipment(msg: Message):
+        if not is_owner(msg): return
+        await msg.answer(twin.get_equipment_list())
+
+    # ── Knowledge Base ───────────────────────────────────────
+    @dp.message(Command("kb"))
+    async def cmd_kb(msg: Message):
+        if not is_owner(msg): return
+        cats = await kb.list_categories()
+        lines = ["📚 *MBF-3 Bilim Bazasi*\n"]
+        cat_emoji = {"slurry_pump":"🔩","GMD":"⚡","mill":"⚙️",
+                      "flotation":"⚗️","conveyor":"🏗","standards":"📌",
+                      "predictive":"🔮","digital_twin":"🤖","custom":"📄"}
+        for cat, cnt in cats.items():
+            e = cat_emoji.get(cat, "📄")
+            lines.append(f"{e} {cat}: {cnt} ta hujjat")
+        lines.append("\n_Qidirish:_ `KB: warman kaviatsiya`")
+        lines.append("_PDF yuborish:_ bilim bazasiga qo'shiladi")
+        await msg.answer("\n".join(lines))
+
+    # ── AutoPilot / AutoReply boshqaruvi ─────────────────────
+    @dp.message(Command("autopilot_on"))
+    async def cmd_ap_on(msg: Message):
+        if not is_owner(msg): return
+        if userbot.auto_reply:
+            userbot.auto_reply.enable()
+            userbot.auto_reply.set_mode("on")
+            await msg.answer("🟢 *AutoPilot YONDIRILDI*\n_Barcha xabarlarga O'tkirbek nomidan javob beriladi_")
+        else:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    @dp.message(Command("autopilot_whitelist"))
+    async def cmd_ap_whitelist(msg: Message):
+        if not is_owner(msg): return
+        if userbot.auto_reply:
+            userbot.auto_reply.enable()
+            userbot.auto_reply.set_mode("whitelist")
+            wl = userbot.auto_reply.whitelist
+            wl_str = ", ".join(wl) if wl else "bo'sh (AUTO_REPLY_WHITELIST .env)"
+            await msg.answer(
+                f"🟡 *AutoPilot WHITELIST REJIMI*\n\n"
+                f"Faqat ruxsat etilgan kontaktlarga javob beriladi.\n"
+                f"Whitelist: {wl_str}\n\n"
+                f"_Yangi qo'shish:_ `Whitelist qo'sh: @username`"
+            )
+        else:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    @dp.message(Command("autopilot_off"))
+    async def cmd_ap_off(msg: Message):
+        if not is_owner(msg): return
+        if userbot.auto_reply:
+            userbot.auto_reply.disable()
+            await msg.answer("⚫ *AutoPilot O'CHIRILDI*\n_Xabarlarga avtomatik javob berilmaydi_")
+        else:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    @dp.message(Command("autopilot_pause"))
+    async def cmd_ap_pause(msg: Message):
+        if not is_owner(msg): return
+        args = msg.text.split()
+        minutes = int(args[1]) if len(args) > 1 and args[1].isdigit() else 60
+        if userbot.auto_reply:
+            userbot.auto_reply.pause(minutes)
+            await msg.answer(f"⏸ *AutoPilot {minutes} daqiqa to'xtatildi*")
+        else:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    @dp.message(Command("autopilot_status"))
+    async def cmd_ap_status(msg: Message):
+        if not is_owner(msg): return
+        if userbot.auto_reply:
+            status = userbot.auto_reply.get_status()
+            wl = userbot.auto_reply.whitelist
+            lines = [f"🤖 *AutoPilot holati:*\n{status}"]
+            if wl:
+                lines.append(f"\n📋 Whitelist ({len(wl)} ta):")
+                lines.extend([f"  • {w}" for w in wl])
+            await msg.answer("\n".join(lines))
+        else:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    # ── Standart buyruqlar ───────────────────────────────────
     @dp.message(Command("tasks"))
     async def cmd_tasks(msg: Message):
         if not is_owner(msg): return
-        await show_tasks(msg, db)
+        await msg.answer(await get_tasks_text(db))
 
     @dp.message(Command("notes"))
     async def cmd_notes(msg: Message):
         if not is_owner(msg): return
-        await show_notes(msg, db)
+        await msg.answer(await get_notes_text(db))
 
     @dp.message(Command("report"))
     async def cmd_report(msg: Message):
         if not is_owner(msg): return
-        await show_report(msg, db)
+        await msg.answer(await get_report_text(db))
 
     @dp.message(Command("memory"))
     async def cmd_memory(msg: Message):
@@ -115,267 +217,333 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             f"🧠 *Xotira holati:*\n\n"
             f"📦 Jami: {stats['total']}\n"
             f"⭐ Doimiy: {stats['permanent']}\n"
-            f"⏰ 7 kunda o'chadi: {stats['expiring_soon']}\n"
-            f"📅 Muddat: 60 kun"
+            f"⏰ 7 kunda o'chadi: {stats['expiring_soon']}"
         )
 
     @dp.message(Command("cleanup"))
     async def cmd_cleanup(msg: Message):
         if not is_owner(msg): return
         deleted = await db.cleanup()
-        await msg.answer(f"🗑 *Tozalash yakunlandi*\n\n{deleted} ta eski yozuv o'chirildi.")
+        await msg.answer(f"🗑 {deleted} ta eski yozuv o'chirildi.")
 
     @dp.message(Command("voices"))
     async def cmd_voices(msg: Message):
         if not is_owner(msg): return
-        wait = await msg.answer("🎙 _ElevenLabs ovozlari yuklanmoqda..._")
         voices = await tts.get_voices()
         if not voices:
-            await wait.edit_text("❌ ElevenLabs ulanmagan. ELEVENLABS_API_KEY tekshiring.")
+            await msg.answer("❌ ElevenLabs ulanmagan.")
             return
-        lines = ["🎙 *Mavjud ovozlar:*\n"]
+        lines = ["🎙 *ElevenLabs ovozlari:*\n"]
         for v in voices[:10]:
             lines.append(f"• `{v['voice_id']}` — {v['name']}")
-        lines.append("\n_Ovoz ID ni .env ga ELEVENLABS_VOICE_ID sifatida qo'shing_")
-        await wait.edit_text("\n".join(lines))
+        await msg.answer("\n".join(lines))
 
-    # ── Ovozli xabar (kiruvchi) ────────────────────────────────
+    # ════════════════════════════════════════════════════════
+    #  MEDIA HANDLERLAR
+    # ════════════════════════════════════════════════════════
+
     @dp.message(F.voice)
     async def handle_voice(msg: Message):
         if not is_owner(msg): return
         wait = await msg.answer("🎤 _Ovoz tahlil qilinmoqda..._")
         try:
-            file = await msg.bot.get_file(msg.voice.file_id)
-            bio  = await msg.bot.download_file(file.file_path)
-            audio_bytes = bio.read()
-
-            transcribed = await ai.transcribe_voice(audio_bytes)
-            if not transcribed:
-                await wait.edit_text("❌ Ovozni tushunib bo'lmadi. Qaytadan yuboring.")
+            file  = await msg.bot.get_file(msg.voice.file_id)
+            audio = (await msg.bot.download_file(file.file_path)).read()
+            text  = await ai.transcribe_voice(audio)
+            if not text:
+                await wait.edit_text("❌ Ovozni tushunib bo'lmadi.")
                 return
-
-            await wait.edit_text(f"🎤 *Eshitildi:*\n_{transcribed}_\n\n⏳ _Qayta ishlanmoqda..._")
-            response = await process_text(transcribed, db, ai, userbot, owner_id, tts, mech)
-            await msg.answer(response)
-            await db.save_message(msg.from_user.id, "in", transcribed, "voice")
-
+            await wait.edit_text(f"🎤 _Eshitildi:_ {text}\n\n⏳ _Qayta ishlanmoqda..._")
+            resp = await process_text(text, db, ai, userbot, owner_id, tts, mech, vis, kb, twin)
+            await msg.answer(resp)
+            await db.save_message(msg.from_user.id, "in", text, "voice")
         except Exception as e:
             await wait.edit_text(f"❌ Xatolik: {e}")
 
-    # ── PDF ───────────────────────────────────────────────────
     @dp.message(F.document)
     async def handle_document(msg: Message):
         if not is_owner(msg): return
-        if msg.document.mime_type == "application/pdf":
-            wait = await msg.answer("📄 _PDF tahlil qilinmoqda..._")
-            file = await msg.bot.get_file(msg.document.file_id)
-            pdf  = (await msg.bot.download_file(file.file_path)).read()
-            result = await ai.analyze_pdf(pdf)
-            await wait.edit_text(f"📄 *PDF Tahlili:*\n\n{result}")
-        else:
-            await msg.answer("📎 Faqat PDF fayllarni tahlil qila olaman.")
+        if msg.document.mime_type != "application/pdf":
+            await msg.answer("📎 Faqat PDF qabul qilinadi.")
+            return
+        wait  = await msg.answer("📄 _PDF qayta ishlanmoqda..._")
+        file  = await msg.bot.get_file(msg.document.file_id)
+        pdf_b = (await msg.bot.download_file(file.file_path)).read()
 
-    # ── Rasm / Chertyo'j ──────────────────────────────────────
+        caption = msg.caption or ""
+
+        # KB ga qo'shish yoki oddiy tahlil
+        if any(w in caption.lower() for w in ['kb', 'bilim', 'saqlash', 'qo\'sh', 'база']):
+            text_content = await ai.analyze_pdf(pdf_b)
+            doc_title = msg.document.file_name or "Noma'lum PDF"
+            doc_id = await kb.add_document(
+                title=doc_title,
+                content=text_content[:3000],
+                category="custom",
+                tags=caption,
+                source="user_upload"
+            )
+            await wait.edit_text(
+                f"📚 *Bilim bazasiga qo'shildi!*\n\n"
+                f"📄 Nom: {doc_title}\n"
+                f"🔢 ID: {doc_id}\n"
+                f"💡 Endi bu hujjat bo'yicha savol bera olasiz."
+            )
+        else:
+            result = await ai.analyze_pdf(pdf_b)
+            await wait.edit_text(f"📄 *PDF Tahlili:*\n\n{result[:3500]}")
+
     @dp.message(F.photo)
     async def handle_photo(msg: Message):
         if not is_owner(msg): return
-        caption = msg.caption or ""
-        wait  = await msg.answer("🖼 _Rasm tahlil qilinmoqda..._")
+        caption = (msg.caption or "").lower().strip()
+        wait    = await msg.answer("🖼 _Tahlil qilinmoqda..._")
+
         photo = msg.photo[-1]
         file  = await msg.bot.get_file(photo.file_id)
         img   = (await msg.bot.download_file(file.file_path)).read()
 
-        # Chertyo'j yoki oddiy rasm
-        is_drawing = any(w in caption.lower() for w in
-                         ['chertyo', 'sxema', 'chizma', 'drawing', 'scheme', 'план', 'чертёж'])
-        result = await ai.analyze_image(img, caption if caption else "")
-        prefix = "📐 *Chertyo'j Tahlili:*" if is_drawing else "🖼 *Rasm tahlili:*"
-        await wait.edit_text(f"{prefix}\n\n{result}")
+        # Tahlil turini aniqlash
+        if any(w in caption for w in ['defekt', 'nosozlik', 'tekshir', 'inspect', 'визуал']):
+            eq = re.search(r'(?:uskuna|qurilma)[=:\s]+(\S+)', caption)
+            eq_name = eq.group(1) if eq else ""
+            result = await vis.defect_analysis(img, eq_name, msg.caption or "")
+            await wait.edit_text(result[:4000])
 
-    # ── Matn ──────────────────────────────────────────────────
+        elif any(w in caption for w in ['hse', 'xavfsizlik', 'ppe', 'kiyim', 'helmet', 'kaska']):
+            zone = re.search(r'(?:zona|zone|joy)[=:\s]+(.+)', caption)
+            zone_name = zone.group(1) if zone else "Umumiy ish zonasi"
+            result = await vis.hse_audit(img, zone_name)
+            await wait.edit_text(result[:4000])
+
+        elif any(w in caption for w in ['sensor', 'datchik', 'monitor', 'scada', 'skrinshot']):
+            eq = re.search(r'(?:uskuna|eq)[=:\s]+(\S+)', caption)
+            eq_name = eq.group(1) if eq else ""
+            result = await vis.sensor_analysis("", eq_name, img)
+            await wait.edit_text(result[:4000])
+
+        elif any(w in caption for w in ['chertyo', 'sxema', 'chizma', 'drawing', 'plan', 'чертёж']):
+            result = await vis.drawing_analysis(img, msg.caption or "")
+            await wait.edit_text(result[:4000])
+
+        else:
+            # Har qanday sanoat rasmi uchun aqlli tahlil
+            result = await ai.analyze_image(img, msg.caption or "")
+            await wait.edit_text(f"🖼 *Rasm tahlili:*\n\n{result[:3500]}")
+
     @dp.message(F.text)
     async def handle_text(msg: Message):
         if not is_owner(msg): return
-
         await db.save_message(msg.from_user.id, "in", msg.text)
         await db.save_conversation("user", msg.text)
         await msg.bot.send_chat_action(msg.chat.id, "typing")
+        resp = await process_text(
+            msg.text, db, ai, userbot, owner_id, tts, mech, vis, kb, twin
+        )
+        await msg.answer(resp[:4000])
+        await db.save_message(msg.from_user.id, "out", resp)
+        await db.save_conversation("assistant", resp)
 
-        response = await process_text(msg.text, db, ai, userbot, owner_id, tts, mech)
-        await msg.answer(response)
 
-        await db.save_message(msg.from_user.id, "out", response)
-        await db.save_conversation("assistant", response)
+# ════════════════════════════════════════════════════════════
+#  INTENT ANIQLASH
+# ════════════════════════════════════════════════════════════
 
-
-# ── Intent tez aniqlash ───────────────────────────────────────
 def quick_intent(text: str) -> tuple:
-    t  = text.strip()
-    tl = t.lower()
+    t, tl = text.strip(), text.strip().lower()
 
-    # ── Ovozli xabar yuborish: "Azizga ovozli yoz: ..." ──────
-    voice_send = re.search(
-        r'^(.+?)\s+ga\s+ovoz(?:li)?\s+(?:yoz|yubor)(?:ing)?\s*[:\s]\s*(.+)$',
-        t, re.IGNORECASE
-    )
-    if voice_send:
-        return ("voice_send", {
-            "target": voice_send.group(1).strip(),
-            "content": voice_send.group(2).strip()
-        })
+    # Ovozli xabar
+    m = re.search(r'^(.+?)\s+ga\s+ovoz(?:li)?\s+(?:yoz|yubor)\s*[:\s]\s*(.+)$', t, re.I)
+    if m: return ("voice_send", {"target": m.group(1).strip(), "content": m.group(2).strip()})
 
-    # ── Oddiy xabar yuborish ──────────────────────────────────
-    send_match = re.search(
-        r'^(.+?)\s+ga\s+yoz(?:ing)?\s*[:\s]\s*(.+)$', t, re.IGNORECASE
-    )
-    if send_match:
-        return ("send_message", {
-            "target": send_match.group(1).strip(),
-            "content": send_match.group(2).strip()
-        })
+    # Matnli xabar
+    m = re.search(r'^(.+?)\s+ga\s+yoz(?:ing)?\s*[:\s]\s*(.+)$', t, re.I)
+    if m: return ("send_message", {"target": m.group(1).strip(), "content": m.group(2).strip()})
 
-    # ── Kontaktlar ────────────────────────────────────────────
-    if any(w in tl for w in ['kontaktlar', 'kontakt royxat', 'kimlar bor']):
-        return ("contacts", {})
+    # Whitelist boshqaruv
+    m = re.search(r'whitelist\s+(?:qo\'sh|add)[:\s]+(.+)', tl)
+    if m: return ("whitelist_add", {"contact": m.group(1).strip()})
 
-    # ── Zametka ───────────────────────────────────────────────
-    note_m = re.match(
-        r'^(?:eslab qol|zametka|yodda tut|saqlab qol|qeyd)[:\s]+(.+)$', t, re.IGNORECASE
-    )
-    if note_m:
-        return ("save_note", {"content": note_m.group(1).strip()})
+    # Digital Twin — holat yangilash
+    m = re.search(r'^holat:\s*(\w+)(.*)', tl)
+    if m:
+        params = {"equipment_id": m.group(1)}
+        rest = m.group(2)
+        for pat, key in [(r'vib[=:\s]+([\d.]+)', 'vibration'),
+                          (r'temp[=:\s]+([\d.]+)', 'temperature'),
+                          (r'bosim[=:\s]+([\d.]+)', 'pressure'),
+                          (r'runtime[=:\s]+([\d.]+)', 'runtime_h'),
+                          (r'status[=:\s]+(\w+)', 'status')]:
+            pm = re.search(pat, rest, re.I)
+            if pm:
+                params[key] = float(pm.group(1)) if key != 'status' else pm.group(1)
+        note_m = re.search(r'(?:izoh|nota)[=:\s]+(.+)', rest, re.I)
+        if note_m: params['notes'] = note_m.group(1)
+        return ("twin_update", params)
 
-    # ── Vazifa ───────────────────────────────────────────────
-    task_m = re.match(
-        r'^(?:vazifa|topshiriq|todo|task)[:\s]+(.+)$', t, re.IGNORECASE
-    )
-    if task_m:
-        content  = task_m.group(1).strip()
-        deadline = None
-        due_m = re.search(r',\s*muddat\s+(.+)$', content, re.IGNORECASE)
-        if due_m:
-            deadline = due_m.group(1).strip()
-            content  = content[:due_m.start()].strip()
-        return ("add_task", {"content": content, "deadline": deadline})
+    # Digital Twin — prognoz
+    if re.match(r'^prognoz:\s*\w+', tl):
+        eq = re.search(r'prognoz:\s*(\w+)', tl)
+        return ("twin_predict", {"equipment_id": eq.group(1) if eq else ""})
 
-    # ── Vazifa bajarildi ──────────────────────────────────────
-    done_m = re.search(r'vazifa\s+(\d+)\s+bajarildi', tl)
-    if done_m:
-        return ("done_task", {"task_id": done_m.group(1)})
+    # Digital Twin — ta'mirlash logi
+    m = re.search(r'^tamirlash:\s*(\w+)', tl)
+    if m:
+        params = {"equipment_id": m.group(1)}
+        for pat, key in [(r'turi[=:\s]+([^,\n]+)', 'work_type'),
+                          (r'ish[=:\s]+([^,\n]+)', 'description'),
+                          (r'qism[=:\s]+([^,\n]+)', 'parts_used'),
+                          (r'vaqt[=:\s]+([\d.]+)', 'duration_h')]:
+            pm = re.search(pat, tl, re.I)
+            if pm: params[key] = pm.group(1).strip()
+        return ("twin_maintenance", params)
 
-    # ── Valyuta ───────────────────────────────────────────────
-    if any(w in tl for w in ['dollar', 'kurs', 'valyuta', "so'm", 'som',
-                               'evro', 'euro', 'rubl', 'usd', 'eur', 'rub']):
-        amt_m = re.search(r'(\d[\d\s,.]*)[\s]*(dollar|usd|euro|evro|rubl|rub)', tl)
-        amount = amt_m.group(1).replace(' ', '').replace(',', '.') if amt_m else None
-        ctype  = amt_m.group(2) if amt_m else None
-        return ("currency", {"amount": amount, "currency": ctype})
+    # KB qidiruv
+    m = re.search(r'^(?:kb|bilim|база)[:\s]+(.+)', tl)
+    if m: return ("kb_search", {"query": m.group(1).strip()})
 
-    # ── Ob-havo ───────────────────────────────────────────────
-    if any(w in tl for w in ["ob-havo", "ob havo", "havo", "погода", "temperatura"]):
-        city_m = re.search(r'(?:da|da|дa)\s+(?:ob-havo|havo)', tl)
-        city = re.sub(r'\s+(?:da|дa)\s+.*', '', tl).strip() if city_m else "Olmaliq"
-        return ("weather", {"city": city or "Olmaliq"})
+    # Zametka
+    m = re.match(r'^(?:eslab qol|zametka|yodda tut|saqlab qol|qeyd)[:\s]+(.+)', t, re.I)
+    if m: return ("save_note", {"content": m.group(1).strip()})
 
-    # ── Gidravlik hisob ───────────────────────────────────────
-    if any(w in tl for w in ['gidravlik hisob', 'hydraulic', 'bosim yo\'q', 'truba hisob']):
+    # Vazifa
+    m = re.match(r'^(?:vazifa|topshiriq|todo|task)[:\s]+(.+)', t, re.I)
+    if m:
+        content = m.group(1).strip()
+        due = None
+        dm = re.search(r',\s*muddat\s+(.+)$', content, re.I)
+        if dm:
+            due = dm.group(1).strip()
+            content = content[:dm.start()].strip()
+        return ("add_task", {"content": content, "deadline": due})
+
+    # Vazifa bajarildi
+    m = re.search(r'vazifa\s+(\d+)\s+bajarildi', tl)
+    if m: return ("done_task", {"task_id": m.group(1)})
+
+    # Valyuta
+    if any(w in tl for w in ['dollar','kurs','valyuta','evro','rubl','usd','eur','rub']):
+        am = re.search(r'(\d[\d\s,.]*)[\s]*(dollar|usd|euro|evro|rubl|rub)', tl)
+        return ("currency", {"amount": am.group(1) if am else None,
+                              "currency": am.group(2) if am else None})
+
+    # Ob-havo
+    if any(w in tl for w in ["ob-havo","ob havo","havo","погода","temperatura"]):
+        cm = re.search(r'(\w+)\s+(?:da|dagi)?\s*(?:ob-havo|havo)', tl)
+        return ("weather", {"city": cm.group(1) if cm else "Olmaliq"})
+
+    # Hisob-kitoblar
+    if any(w in tl for w in ['gidravlik hisob','hydraulic','truba hisob']):
         params = {}
-        for pat, key in [(r'sarif[=:\s]+(\d+[\d.]*)', 'flow'),
-                          (r'diametr?[=:\s]+(\d+[\d.]*)', 'dia'),
-                          (r'uzunlik[=:\s]+(\d+[\d.]*)', 'length')]:
-            m = re.search(pat, tl)
-            if m: params[key] = float(m.group(1))
+        for pat, key in [(r'sarif[=:\s]+([\d.]+)','flow'),(r'diametr?[=:\s]+([\d.]+)','dia'),(r'uzunlik[=:\s]+([\d.]+)','length')]:
+            pm = re.search(pat, tl)
+            if pm: params[key] = float(pm.group(1))
         return ("hydraulic_calc", params)
 
-    # ── Pnevmatik hisob ───────────────────────────────────────
-    if any(w in tl for w in ['pnevmatik hisob', 'kompressor quvvat', 'havo hisob']):
+    if any(w in tl for w in ['pnevmatik hisob','kompressor quvvat','havo hisob']):
         params = {}
-        for pat, key in [(r'hajm[=:\s]+(\d+[\d.]*)', 'vol'),
-                          (r'bosim[=:\s]+(\d+[\d.]*)', 'pressure'),
-                          (r'vaqt[=:\s]+(\d+[\d.]*)', 'time')]:
-            m = re.search(pat, tl)
-            if m: params[key] = float(m.group(1))
+        for pat, key in [(r'hajm[=:\s]+([\d.]+)','vol'),(r'bosim[=:\s]+([\d.]+)','pressure'),(r'vaqt[=:\s]+([\d.]+)','time')]:
+            pm = re.search(pat, tl)
+            if pm: params[key] = float(pm.group(1))
         return ("pneumatic_calc", params)
 
-    # ── Podshipnik hisob ──────────────────────────────────────
-    if any(w in tl for w in ['podshipnik resurs', 'bearing', 'podshipnik hisob']):
+    if any(w in tl for w in ['podshipnik resurs','bearing calc']):
         params = {}
-        for pat, key in [(r'c[=:\s]+(\d+[\d.]*)', 'C'),
-                          (r'p[=:\s]+(\d+[\d.]*)', 'P'),
-                          (r'n[=:\s]+(\d+[\d.]*)', 'n')]:
-            m = re.search(pat, tl)
-            if m: params[key] = float(m.group(1))
+        for pat, key in [(r'\bc[=:\s]+([\d.]+)','C'),(r'\bp[=:\s]+([\d.]+)','P'),(r'\bn[=:\s]+([\d.]+)','n')]:
+            pm = re.search(pat, tl)
+            if pm: params[key] = float(pm.group(1))
         return ("bearing_calc", params)
 
-    # ── Qurilma muammolari ────────────────────────────────────
-    equipment_words = ['nasos', 'kompressor', 'konveyер', 'tegirmon', 'flotatsiya',
-                        'насос', 'компрессор', 'конвейер', 'мельниц']
-    for eq in equipment_words:
+    # Qurilma muammolari
+    for eq in ['nasos','kompressor','konveyер','tegirmon','flotatsiya']:
         if eq in tl:
             return ("equipment_info", {"equipment": eq})
 
-    # ── Xavfsizlik ───────────────────────────────────────────
-    if any(w in tl for w in ['xavfsizlik', 'checklist', 'ruxsatnoma', 'xavfli ish',
-                               'нарят', 'narad', 'допуск']):
+    # Xavfsizlik
+    if any(w in tl for w in ['xavfsizlik','checklist','ruxsatnoma','xavfli ish']):
         return ("safety_check", {"work_type": t})
 
-    # ── Hodisa ───────────────────────────────────────────────
-    if any(w in tl for w in ['hodisa', 'baxtsiz', 'yong\'in', "kimyo to'kildi",
-                               'jarohat', 'qon', 'avaria', 'avariya']):
+    # Hodisa
+    if any(w in tl for w in ["hodisa","baxtsiz","yong'in","jarohat","avaria","avariya"]):
         return ("incident", {"incident_type": t})
 
-    # ── Defekt akti ───────────────────────────────────────────
-    if any(w in tl for w in ['defekt akt', 'defekt akti', 'nuqson dalolatnoma']):
+    # Hujjatlar
+    if any(w in tl for w in ['defekt akt','defekt akti','nuqson dalolatnoma']):
         return ("defect_act", {"raw": t})
-
-    # ── Ish hisoboti ──────────────────────────────────────────
-    if any(w in tl for w in ['ish hisoboti', 'kunlik hisobot', 'smena hisoboti']):
+    if any(w in tl for w in ['ish hisoboti','kunlik hisobot','smena hisoboti']):
         return ("work_report", {"raw": t})
-
-    # ── Xizmat xati ───────────────────────────────────────────
-    if any(w in tl for w in ['xizmat xati', 'xat yoz', 'служебная записка']):
+    if any(w in tl for w in ['xizmat xati','xat yoz']):
         return ("service_letter", {"raw": t})
-
-    # ── PPR jadvali ───────────────────────────────────────────
-    if any(w in tl for w in ['ppr', 'profilaktik', 'ta\'mirlash jadvali', 'ТО ']):
+    if any(w in tl for w in ['ppr','profilaktik',"ta'mirlash jadvali"]):
         equip = re.findall(r'nasos|kompressor|konveyер|tegirmon|flotatsiya', tl)
-        return ("ppr_schedule", {"equipment": equip or ["nasos", "kompressor"]})
+        return ("ppr_schedule", {"equipment": equip or ["nasos","kompressor"]})
 
-    # ── Hisobot ───────────────────────────────────────────────
-    if any(w in tl for w in ['haftalik hisobot', '/report']):
-        return ("report", {})
-
-    # ── Xotira ───────────────────────────────────────────────
-    if '/memory' in tl or 'xotira holati' in tl:
-        return ("memory", {})
+    # Hisobot va xotira
+    if '/report' in tl: return ("report", {})
+    if '/memory' in tl or 'xotira holati' in tl: return ("memory", {})
 
     return (None, {})
 
 
-# ── Asosiy xabar qayta ishlash ────────────────────────────────
+# ════════════════════════════════════════════════════════════
+#  ASOSIY QAYTA ISHLASH
+# ════════════════════════════════════════════════════════════
+
 async def process_text(text: str, db: Database, ai: AIServices,
                        userbot: UserBot, owner_id: int,
-                       tts: TTSService, mech: MechanicService) -> str:
-    action, data = quick_intent(text)
+                       tts: TTSService, mech: MechanicService,
+                       vis: VisionService, kb: KnowledgeBase,
+                       twin: DigitalTwin) -> str:
 
+    action, data = quick_intent(text)
     if action is None:
         intent = await ai.detect_intent(text)
         action = intent.get("action", "chat")
         data   = intent
 
-    # ── Xabar yuborish ────────────────────────────────────────
-    if action == "send_message":
-        return await action_send_message(data.get("target",""), data.get("content",""), userbot)
-
-    # ── OVOZLI XABAR YUBORISH (ElevenLabs) ───────────────────
-    elif action == "voice_send":
+    # ── Ovozli xabar ────────────────────────────────────────
+    if action == "voice_send":
         return await action_send_voice_message(
-            data.get("target",""), data.get("content",""), userbot, ai, tts
-        )
+            data.get("target",""), data.get("content",""), userbot, ai, tts)
+
+    elif action == "send_message":
+        return await action_send_message(data.get("target",""), data.get("content",""), userbot)
 
     elif action == "contacts":
         return await action_get_contacts(userbot)
 
+    # ── Whitelist ────────────────────────────────────────────
+    elif action == "whitelist_add":
+        if userbot.auto_reply:
+            userbot.auto_reply.add_to_whitelist(data.get("contact",""))
+            return f"✅ Whitelist ga qo'shildi: `{data.get('contact')}`"
+        return "❌ AutoReply ulanmagan."
+
+    # ── Digital Twin ─────────────────────────────────────────
+    elif action == "twin_update":
+        eq_id = data.pop("equipment_id", "")
+        return await twin.update_state(eq_id, **data)
+
+    elif action == "twin_predict":
+        return await twin.get_ai_prediction(data.get("equipment_id",""))
+
+    elif action == "twin_maintenance":
+        eq_id = data.pop("equipment_id", "")
+        return await twin.add_maintenance_log(
+            eq_id,
+            work_type  = data.get("work_type","Ta'mirlash"),
+            description= data.get("description",""),
+            parts_used = data.get("parts_used",""),
+            duration_h = float(data.get("duration_h",0)) if data.get("duration_h") else None
+        )
+
+    # ── Knowledge Base ────────────────────────────────────────
+    elif action == "kb_search":
+        query = data.get("query", text)
+        result = await kb.answer_with_rag(query)
+        return result or "❓ Bilim bazasida ma'lumot topilmadi."
+
+    # ── Zametka/Vazifa ────────────────────────────────────────
     elif action == "save_note":
         return await action_save_note(data.get("content") or text, db, ai)
 
@@ -386,11 +554,11 @@ async def process_text(text: str, db: Database, ai: AIServices,
         return await get_tasks_text(db)
 
     elif action == "done_task":
-        task_id = data.get("task_id")
-        if task_id:
-            await db.complete_task(int(task_id))
-            return f"✅ Vazifa #{task_id} bajarildi deb belgilandi!"
-        return "❓ Qaysi vazifa? Masalan: `Vazifa 3 bajarildi`"
+        tid = data.get("task_id")
+        if tid:
+            await db.complete_task(int(tid))
+            return f"✅ Vazifa #{tid} bajarildi!"
+        return "❓ Qaysi vazifa?"
 
     elif action == "get_notes":
         return await get_notes_text(db)
@@ -399,267 +567,192 @@ async def process_text(text: str, db: Database, ai: AIServices,
         return await action_currency(data.get("amount"), data.get("currency"))
 
     elif action == "weather":
-        return await action_weather(data.get("city") or "Olmaliq")
+        return await action_weather(data.get("city","Olmaliq"))
 
     elif action == "report":
         return await get_report_text(db)
 
     elif action == "memory":
         stats = await db.get_all_memories_count()
-        return (
-            f"🧠 *Xotira holati:*\n\n"
-            f"📦 Jami: {stats['total']}\n"
-            f"⭐ Doimiy: {stats['permanent']}\n"
-            f"⏰ 7 kunda o'chadi: {stats['expiring_soon']}"
-        )
+        return (f"🧠 *Xotira:* Jami:{stats['total']} | "
+                f"Doimiy:{stats['permanent']} | Eskirmoqda:{stats['expiring_soon']}")
 
-    # ── Mexanik maxsus funksiyalar ────────────────────────────
+    # ── Mexanik funksiyalar ───────────────────────────────────
     elif action == "equipment_info":
-        equip = data.get("equipment") or data.get("content", "nasos")
-        return mech.get_equipment_info(equip)
+        return mech.get_equipment_info(data.get("equipment","nasos"))
 
     elif action == "safety_check":
-        work = data.get("work_type") or text
-        return mech.get_safety_checklist(work)
+        return mech.get_safety_checklist(data.get("work_type") or text)
 
     elif action == "incident":
         return mech.get_incident_guide(data.get("incident_type") or text)
 
     elif action == "hydraulic_calc":
-        flow   = data.get("flow", 50.0)
-        dia    = data.get("dia", 100.0)
-        length = data.get("length", 100.0)
-        return mech.hydraulic_calc(flow, dia, length)
+        return mech.hydraulic_calc(data.get("flow",50), data.get("dia",100), data.get("length",100))
 
     elif action == "pneumatic_calc":
-        vol      = data.get("vol", 10.0)
-        pressure = data.get("pressure", 8.0)
-        time_min = data.get("time", 5.0)
-        return mech.pneumatic_calc(vol, pressure, time_min)
+        return mech.pneumatic_calc(data.get("vol",10), data.get("pressure",8), data.get("time",5))
 
     elif action == "bearing_calc":
-        C = data.get("C", 50.0)
-        P = data.get("P", 20.0)
-        n = data.get("n", 1500.0)
-        return mech.bearing_calc(C, P, n)
+        return mech.bearing_calc(data.get("C",50), data.get("P",20), data.get("n",1500))
 
     elif action == "defect_act":
-        params = parse_document_params(data.get("raw",""), "defect")
-        return mech.build_defect_act(params)
+        return mech.build_defect_act(parse_doc_params(data.get("raw",""),"defect"))
 
     elif action == "work_report":
-        params = parse_document_params(data.get("raw",""), "report")
-        return mech.build_work_report(params)
+        return mech.build_work_report(parse_doc_params(data.get("raw",""),"report"))
 
     elif action == "service_letter":
-        params = parse_document_params(data.get("raw",""), "letter")
-        return mech.build_service_letter(params)
+        return mech.build_service_letter(parse_doc_params(data.get("raw",""),"letter"))
 
     elif action == "ppr_schedule":
-        equip = data.get("equipment", ["nasos", "kompressor"])
-        return await mech.generate_ppr_schedule(equip)
+        return await mech.generate_ppr_schedule(data.get("equipment",["nasos"]))
 
     else:
-        # Texnik savol yoki oddiy chat
+        # ── RAG + AI suhbat ─────────────────────────────────
+        # Avval KB dan qidirish
+        kb_answer = await kb.answer_with_rag(text)
+        if kb_answer:
+            return kb_answer
+
+        # Keyin umumiy chat
         memories = await db.get_relevant_memories(text)
         context  = "\n".join(f"• {m}" for m in memories) if memories else ""
         history  = await db.get_conversation_history()
         return await ai.chat(text, history, context)
 
 
-# ── Ovozli xabar yuborish (ElevenLabs + Userbot) ─────────────
-async def action_send_voice_message(
-    target: str, content: str,
-    userbot: UserBot, ai: AIServices, tts: TTSService
-) -> str:
+# ════════════════════════════════════════════════════════════
+#  YORDAMCHI FUNKSIYALAR
+# ════════════════════════════════════════════════════════════
+
+def parse_doc_params(raw: str, doc_type: str) -> dict:
+    params = {}
+    for key in ['qurilma','joy','nuqson','tamirlash','ehtiyot','muddat','nomer',
+                'kimga','mavzu','matn','tel','smena','bajarildi','muammo','sarf','keyingi','davom']:
+        m = re.search(rf'{key}[=:\s]+([^,\n]+)', raw, re.I)
+        if m: params[key] = m.group(1).strip()
+    if not params:
+        if doc_type == "defect": params["nuqson"] = raw
+        elif doc_type == "report": params["bajarildi"] = raw
+        elif doc_type == "letter": params["matn"] = raw
+    return params
+
+
+async def action_send_voice_message(target, content, userbot, ai, tts):
     if not target or not content:
-        return (
-            "❓ Format:\n"
-            "`Azizga ovozli yoz: kechikmoqdaman`\n"
-            "`Shodiга ovoz: yig'ilish kechikadi`"
-        )
+        return "❓ Format:\n`Azizga ovozli yoz: kechikmoqdaman`"
     if not userbot.is_connected:
-        return "❌ UserBot ulanmagan. TG_SESSION_STRING tekshiring."
-
-    # 1. Vositachi matnini tuzish (AI yordamida)
-    proxy_text = await ai.build_voice_proxy_text(content, os.getenv("OWNER_NAME", "O'tkirbek"))
-
-    # 2. Matn → Ovoz (ElevenLabs)
-    audio_bytes = await tts.text_to_speech(proxy_text)
-    if not audio_bytes:
-        # TTS ishlamasa — matnli xabar yuboramiz
-        result = await userbot.send_message(target, f"[Ovozli xabar] {proxy_text}")
-        if result["ok"]:
-            return (
-                f"⚠️ ElevenLabs ishlamadi, matnli xabar yuborildi:\n"
-                f"*{result['name']}* ga:\n_{proxy_text}_"
-            )
-        return f"❌ Xabar yuborilmadi: {result['error']}"
-
-    # 3. Ovoz faylini vaqtinchalik saqlash
+        return "❌ UserBot ulanmagan."
+    proxy = await ai.build_voice_proxy_text(content, OWNER_NAME)
+    audio = await tts.text_to_speech(proxy)
+    if not audio:
+        res = await userbot.send_message(target, f"[Ovozli xabar] {proxy}")
+        if res["ok"]: return f"⚠️ TTS ishlamadi, matnli xabar yuborildi: *{res['name']}*"
+        return f"❌ Yuborilmadi: {res['error']}"
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        f.write(audio_bytes)
-        tmp_path = f.name
-
-    # 4. Userbot orqali ovozli xabar yuborish
+        f.write(audio); tmp = f.name
     try:
-        result = await userbot.send_voice(target, tmp_path)
-        import os as _os
-        _os.unlink(tmp_path)
-
-        if result["ok"]:
-            return (
-                f"🎤 *{result['name']}* ga ovozli xabar yuborildi!\n\n"
-                f"📝 _Matn:_ {proxy_text[:100]}{'...' if len(proxy_text)>100 else ''}"
-            )
-        return f"❌ Ovozli xabar yuborilmadi: {result.get('error','')}"
+        res = await userbot.send_voice(target, tmp)
+        os.unlink(tmp)
+        if res["ok"]:
+            return (f"🎤 *{res['name']}* ga ovozli xabar yuborildi!\n"
+                    f"_Matn:_ {proxy[:100]}{'...' if len(proxy)>100 else ''}")
+        return f"❌ Yuborilmadi: {res.get('error','')}"
     except Exception as e:
         return f"❌ Ovozli xabar xatosi: {e}"
 
 
-# ── Hujjat parametrlarini ajratib olish ──────────────────────
-def parse_document_params(raw: str, doc_type: str) -> dict:
-    """Matndan hujjat parametrlarini parse qilish"""
-    params = {}
-    # "qurilma:...", "joy:...", "nuqson:..." kabi pattern
-    for key in ['qurilma', 'joy', 'nuqson', 'tamirlash', 'ehtiyot',
-                'muddat', 'nomer', 'kimga', 'mavzu', 'matn', 'tel',
-                'smena', 'bajarildi', 'muammo', 'sarf', 'keyingi', 'davom']:
-        m = re.search(rf'{key}[=:\s]+([^,\n]+)', raw, re.IGNORECASE)
-        if m:
-            params[key] = m.group(1).strip()
-
-    # Agar hech narsa topolmasa — xom matnni ishlatish
-    if not params:
-        if doc_type == "defect":
-            params["nuqson"] = raw
-        elif doc_type == "report":
-            params["bajarildi"] = raw
-        elif doc_type == "letter":
-            params["matn"] = raw
-
-    return params
-
-
-# ── Qolgan harakatlar ─────────────────────────────────────────
-async def action_send_message(target: str, content: str, userbot: UserBot) -> str:
+async def action_send_message(target, content, userbot):
     if not target or not content:
-        return (
-            "❓ Format:\n"
-            "`Azizga yoz: ertaga uchrashemiz`\n"
-            "`@username ga yoz: salom`\n"
-            "`+998901234567 ga yoz: salom`"
-        )
-    if not userbot.is_connected:
-        return "❌ UserBot ulanmagan. TG_SESSION_STRING ni tekshiring."
-    result = await userbot.send_message(target, content)
-    if result["ok"]:
-        return f"✅ *{result['name']}* ga xabar yuborildi:\n_{content}_"
-    return f"❌ Xabar yuborilmadi: {result['error']}"
-
-
-async def action_get_contacts(userbot: UserBot) -> str:
+        return "❓ Format:\n`Azizga yoz: ertaga uchrashemiz`"
     if not userbot.is_connected:
         return "❌ UserBot ulanmagan."
+    res = await userbot.send_message(target, content)
+    return (f"✅ *{res['name']}* ga xabar yuborildi:\n_{content}_"
+            if res["ok"] else f"❌ Yuborilmadi: {res['error']}")
+
+
+async def action_get_contacts(userbot):
+    if not userbot.is_connected: return "❌ UserBot ulanmagan."
     contacts = await userbot.get_contacts_list()
-    if not contacts:
-        return "📋 Kontaktlar topilmadi."
+    if not contacts: return "📋 Kontaktlar topilmadi."
     lines = ["📋 *Kontaktlaringiz:*\n"]
     for i, c in enumerate(contacts[:30], 1):
-        uname = f" (@{c['username']})" if c['username'] else ""
-        lines.append(f"{i}. {c['name']}{uname}")
-    if len(contacts) > 30:
-        lines.append(f"\n_... va yana {len(contacts)-30} ta_")
+        u = f" (@{c['username']})" if c['username'] else ""
+        lines.append(f"{i}. {c['name']}{u}")
+    if len(contacts) > 30: lines.append(f"\n_+{len(contacts)-30} ta_")
     return "\n".join(lines)
 
 
-async def action_save_note(content: str, db: Database, ai: AIServices) -> str:
-    importance   = await ai.score_importance(content)
-    is_permanent = importance >= 0.75
-    await db.add_note(content, is_pinned=is_permanent)
-    await db.save_memory(content, "note", is_permanent, importance)
-    flag = "\n⭐ _Muhim — doimiy saqlandi_" if is_permanent else ""
+async def action_save_note(content, db, ai):
+    imp  = await ai.score_importance(content)
+    perm = imp >= 0.75
+    await db.add_note(content, is_pinned=perm)
+    await db.save_memory(content, "note", perm, imp)
+    flag = "\n⭐ _Muhim — doimiy saqlandi_" if perm else ""
     return f"✅ *Zametka saqlandi!*{flag}\n\n_{content}_"
 
 
-async def action_add_task(data: dict, db: Database) -> str:
-    title    = data.get("content", "")
-    deadline = data.get("deadline")
-    task_id  = await db.add_task(title, title, deadline)
-    due_str  = f"\n📅 Muddat: {deadline}" if deadline else ""
-    return f"✅ Vazifa #{task_id} qo'shildi:\n*{title}*{due_str}"
+async def action_add_task(data, db):
+    title = data.get("content","")
+    due   = data.get("deadline")
+    tid   = await db.add_task(title, title, due)
+    return f"✅ Vazifa #{tid}:\n*{title}*" + (f"\n📅 {due}" if due else "")
 
 
-async def action_currency(amount=None, currency_type=None) -> str:
+async def action_currency(amount=None, ctype=None):
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get("https://cbu.uz/uz/arkhiv-kursov-valyut/json/",
+                              timeout=aiohttp.ClientTimeout(total=10)) as r:
+                data = await r.json(content_type=None)
+        rates = {d["Ccy"]: float(d["Rate"]) for d in data}
+        res = (f"💱 *Valyuta (CBU)* _{datetime.now().strftime('%d.%m.%Y')}_\n\n"
+               f"🇺🇸 USD: {rates.get('USD',0):,.0f} so'm\n"
+               f"🇪🇺 EUR: {rates.get('EUR',0):,.0f} so'm\n"
+               f"🇷🇺 RUB: {rates.get('RUB',0):.2f} so'm")
+        if amount and ctype:
+            ccy = {'dollar':'USD','usd':'USD','euro':'EUR','evro':'EUR','rubl':'RUB','rub':'RUB'}.get(str(ctype).lower())
+            if ccy:
+                total = float(str(amount).replace(',','.').replace(' ','')) * rates.get(ccy,0)
+                res += f"\n\n💰 = *{total:,.0f} so'm*"
+        return res
+    except Exception as e:
+        return f"❌ Kurs xatosi: {e}"
+
+
+async def action_weather(city):
+    key = os.getenv("WEATHER_API_KEY","")
+    if not key: return "❌ WEATHER_API_KEY yo'q."
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                "https://cbu.uz/uz/arkhiv-kursov-valyut/json/",
+                f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={key}&units=metric&lang=ru",
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
-                data = await r.json(content_type=None)
-        rates = {d["Ccy"]: float(d["Rate"]) for d in data}
-        result = (
-            f"💱 *Valyuta Kurslari (CBU)*\n"
-            f"_{datetime.now().strftime('%d.%m.%Y')}_\n\n"
-            f"🇺🇸 USD: {rates.get('USD', 0):,.0f} so'm\n"
-            f"🇪🇺 EUR: {rates.get('EUR', 0):,.0f} so'm\n"
-            f"🇷🇺 RUB: {rates.get('RUB', 0):.2f} so'm\n"
-            f"🇨🇳 CNY: {rates.get('CNY', 0):,.0f} so'm"
-        )
-        if amount and currency_type:
-            amt = float(str(amount).replace(',', '.').replace(' ', ''))
-            ccy_map = {'dollar': 'USD', 'usd': 'USD',
-                       'euro': 'EUR',  'evro': 'EUR',
-                       'rubl': 'RUB',  'rub': 'RUB'}
-            ccy = ccy_map.get(str(currency_type).lower())
-            if ccy and ccy in rates:
-                total = amt * rates[ccy]
-                result += f"\n\n💰 {amt:,.0f} {ccy} = *{total:,.0f} so'm*"
-        return result
-    except Exception as e:
-        return f"❌ Kurs olishda xatolik: {e}"
-
-
-async def action_weather(city: str) -> str:
-    api_key = os.getenv("WEATHER_API_KEY", "")
-    if not api_key:
-        return "❌ WEATHER_API_KEY sozlanmagan."
-    try:
-        url = (f"https://api.openweathermap.org/data/2.5/weather"
-               f"?q={city}&appid={api_key}&units=metric&lang=ru")
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
-                data = await r.json()
-        if data.get("cod") != 200:
-            return f"❌ {city} shahri topilmadi."
-        return (
-            f"🌤 *{data['name']} ob-havosi:*\n\n"
-            f"🌡 {round(data['main']['temp'])}°C "
-            f"(sezilishi {round(data['main']['feels_like'])}°C)\n"
-            f"☁️ {data['weather'][0]['description']}\n"
-            f"💧 Namlik: {data['main']['humidity']}%\n"
-            f"💨 Shamol: {data['wind']['speed']} m/s"
-        )
+                d = await r.json()
+        if d.get("cod") != 200: return f"❌ {city} topilmadi."
+        return (f"🌤 *{d['name']}:* {round(d['main']['temp'])}°C\n"
+                f"☁️ {d['weather'][0]['description']}\n"
+                f"💧 {d['main']['humidity']}% | 💨 {d['wind']['speed']} m/s")
     except Exception as e:
         return f"❌ Ob-havo xatosi: {e}"
 
 
-async def get_tasks_text(db: Database) -> str:
+async def get_tasks_text(db):
     tasks = await db.get_tasks()
-    if not tasks:
-        return "✅ Hozircha faol vazifalar yo'q."
-    lines = ["📋 *Faol vazifalar:*\n"]
+    if not tasks: return "✅ Faol vazifalar yo'q."
+    lines = ["📋 *Vazifalar:*\n"]
     for i, t in enumerate(tasks, 1):
         due = f" — _{t['due'][:10]}_" if t["due"] else ""
         lines.append(f"{i}. {t['title']}{due}")
     return "\n".join(lines)
 
 
-async def get_notes_text(db: Database) -> str:
+async def get_notes_text(db):
     notes = await db.get_notes()
-    if not notes:
-        return "📝 Hozircha zametka yo'q."
+    if not notes: return "📝 Zametka yo'q."
     lines = ["📝 *Zametkalar:*\n"]
     for i, n in enumerate(notes, 1):
         pin   = "⭐ " if n["pinned"] else ""
@@ -668,24 +761,8 @@ async def get_notes_text(db: Database) -> str:
     return "\n".join(lines)
 
 
-async def get_report_text(db: Database) -> str:
+async def get_report_text(db):
     stats = await db.get_weekly_stats()
-    return (
-        f"📊 *Haftalik Hisobot*\n"
-        f"_{datetime.now().strftime('%d.%m.%Y')}_\n\n"
-        f"💬 Xabarlar: {stats['messages']}\n"
-        f"📝 Zametka: {stats['notes']}\n"
-        f"✅ Bajarilgan: {stats['done']}\n"
-        f"⏳ Kutilayotgan: {stats['pending']}\n"
-        f"🧠 Xotiraga saqlangan: {stats['memories']}"
-    )
-
-
-async def show_tasks(msg: Message, db: Database):
-    await msg.answer(await get_tasks_text(db))
-
-async def show_notes(msg: Message, db: Database):
-    await msg.answer(await get_notes_text(db))
-
-async def show_report(msg: Message, db: Database):
-    await msg.answer(await get_report_text(db))
+    return (f"📊 *Haftalik Hisobot* _{datetime.now().strftime('%d.%m.%Y')}_\n\n"
+            f"💬 {stats['messages']} xabar | 📝 {stats['notes']} zametka\n"
+            f"✅ {stats['done']} bajarildi | ⏳ {stats['pending']} kutmoqda")

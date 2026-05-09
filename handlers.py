@@ -24,30 +24,39 @@ OWNER_NAME = os.getenv("OWNER_NAME", "O'tkirbek")
 
 
 def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
-                      userbot: UserBot, owner_id: int):
+                      userbot: UserBot, owner_id: int, twin=None):
 
-    tts   = TTSService()
-    mech  = MechanicService()
-    vis   = VisionService()
-    kb    = KnowledgeBase()
-    twin  = DigitalTwin()
+    tts        = TTSService()
+    mech       = MechanicService()
+    vis        = VisionService()
+    kb         = KnowledgeBase()
+    digit_twin = DigitalTwin()
 
-    # ── Ishga tushganda KB va Twin ni init qilish ────────────
-    # asyncio.get_event_loop().run_until_complete ishlatilmaydi!
-    # bot.py da main() ichida await qilinadi
+    # PersonalTwin — Raqamli Egizak
+    personal_twin = twin
+    if personal_twin is None:
+        try:
+            from personal_twin import PersonalTwin as PT
+            personal_twin = PT()
+        except ImportError:
+            personal_twin = None
+
+    # ── Ishga tushganda KB va DigitTwin ni init qilish ───────
     import asyncio
     async def _init_services():
         await kb.init()
-        await twin.init()
+        await digit_twin.init()
+        if personal_twin:
+            await personal_twin.init_db()
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # Allaqachon running — task sifatida qo'shamiz
             loop.create_task(_init_services())
         else:
             loop.run_until_complete(_init_services())
     except Exception as e:
-        log.warning(f"Init services: {e}")
+        import logging
+        logging.getLogger(__name__).warning(f"Init: {e}")
 
     def is_owner(msg: Message) -> bool:
         return msg.from_user.id == owner_id
@@ -117,13 +126,13 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     async def cmd_dashboard(msg: Message):
         if not is_owner(msg): return
         wait = await msg.answer("📊 _Dashboard yuklanmoqda..._")
-        result = await twin.get_dashboard()
+        result = await digit_twin.get_dashboard()
         await wait.edit_text(result)
 
     @dp.message(Command("equipment"))
     async def cmd_equipment(msg: Message):
         if not is_owner(msg): return
-        await msg.answer(twin.get_equipment_list())
+        await msg.answer(digit_twin.get_equipment_list())
 
     # ── Knowledge Base ───────────────────────────────────────
     @dp.message(Command("kb"))
@@ -264,7 +273,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
                 await wait.edit_text("❌ Ovozni tushunib bo'lmadi.")
                 return
             await wait.edit_text(f"🎤 _Eshitildi:_ {text}\n\n⏳ _Qayta ishlanmoqda..._")
-            resp = await process_text(text, db, ai, userbot, owner_id, tts, mech, vis, kb, twin)
+            resp = await process_text(text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin)
             await msg.answer(resp)
             await db.save_message(msg.from_user.id, "in", text, "voice")
         except Exception as e:
@@ -341,14 +350,49 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             result = await ai.analyze_image(img, msg.caption or "")
             await wait.edit_text(f"🖼 *Rasm tahlili:*\n\n{result[:3500]}")
 
+    @dp.message(Command("twin_status"))
+    async def cmd_twin_status(msg: Message):
+        if not is_owner(msg): return
+        if personal_twin:
+            stats = await personal_twin.get_stats()
+            ready = "✅ Tayyor" if stats["ready"] else f"⏳ O'rganmoqda ({stats['samples']}/10)"
+            await msg.answer(
+                f"🤖 *Raqamli Egizak holati:*\n\n"
+                f"📝 Namunalar: {stats['samples']} ta\n"
+                f"📚 Bilimlar: {stats['knowledge']} ta\n"
+                f"🔄 Yangilangan: {stats['updated']}\n"
+                f"🟢 Holat: {ready}"
+            )
+        else:
+            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
+
+    @dp.message(Command("twin_add"))
+    async def cmd_twin_add(msg: Message):
+        if not is_owner(msg): return
+        if not personal_twin:
+            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
+            return
+        rest = msg.text.split(maxsplit=1)[1] if len(msg.text.split()) > 1 else ""
+        if ":" in rest:
+            topic, val = rest.split(":", 1)
+        else:
+            topic, val = "general", rest
+        await personal_twin.add_knowledge(topic.strip(), val.strip())
+        await msg.answer(f"✅ Bilim bazasiga qo'shildi:\n_{val.strip()}_")
+
     @dp.message(F.text)
     async def handle_text(msg: Message):
         if not is_owner(msg): return
         await db.save_message(msg.from_user.id, "in", msg.text)
         await db.save_conversation("user", msg.text)
         await msg.bot.send_chat_action(msg.chat.id, "typing")
+
+        # PersonalTwin — suhbatdan o'rganish
+        if personal_twin:
+            await personal_twin.learn_from_message(msg.text)
+
         resp = await process_text(
-            msg.text, db, ai, userbot, owner_id, tts, mech, vis, kb, twin
+            msg.text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin
         )
         await msg.answer(resp[:4000])
         await db.save_message(msg.from_user.id, "out", resp)
@@ -503,7 +547,8 @@ async def process_text(text: str, db: Database, ai: AIServices,
                        userbot: UserBot, owner_id: int,
                        tts: TTSService, mech: MechanicService,
                        vis: VisionService, kb: KnowledgeBase,
-                       twin: DigitalTwin) -> str:
+                       dt: DigitalTwin,
+                       personal_twin=None) -> str:
 
     action, data = quick_intent(text)
     if action is None:
@@ -532,14 +577,14 @@ async def process_text(text: str, db: Database, ai: AIServices,
     # ── Digital Twin ─────────────────────────────────────────
     elif action == "twin_update":
         eq_id = data.pop("equipment_id", "")
-        return await twin.update_state(eq_id, **data)
+        return await dt.update_state(eq_id, **data)
 
     elif action == "twin_predict":
-        return await twin.get_ai_prediction(data.get("equipment_id",""))
+        return await dt.get_ai_prediction(data.get("equipment_id",""))
 
     elif action == "twin_maintenance":
         eq_id = data.pop("equipment_id", "")
-        return await twin.add_maintenance_log(
+        return await dt.add_maintenance_log(
             eq_id,
             work_type  = data.get("work_type","Ta'mirlash"),
             description= data.get("description",""),
@@ -625,7 +670,17 @@ async def process_text(text: str, db: Database, ai: AIServices,
         if kb_answer:
             return kb_answer
 
-        # Keyin umumiy chat
+        # PersonalTwin bilan javob (siz kabi gapiradi)
+        if personal_twin:
+            memories = await db.get_relevant_memories(text)
+            context  = "\n".join(f"• {m}" for m in memories) if memories else ""
+            history  = await db.get_conversation_history()
+            # PersonalTwin uslubda javob
+            reply = await personal_twin.generate_reply(text, "")
+            if reply:
+                return reply
+
+        # Oddiy AI chat (fallback)
         memories = await db.get_relevant_memories(text)
         context  = "\n".join(f"• {m}" for m in memories) if memories else ""
         history  = await db.get_conversation_history()

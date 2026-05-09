@@ -16,10 +16,11 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
-from database import Database
-from userbot import UserBot
-from ai_services import AIServices
-from handlers import register_handlers
+from database      import Database
+from userbot       import UserBot
+from ai_services   import AIServices
+from personal_twin import PersonalTwin
+from handlers      import register_handlers
 
 # ── Logging ───────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stdout)]
@@ -44,38 +45,45 @@ TG_PHONE    = os.getenv("TG_PHONE", "")
 
 def check_env():
     missing = [k for k, v in {
-        "BOT_TOKEN": BOT_TOKEN,
-        "OWNER_CHAT_ID": str(OWNER_ID),
-        "TG_API_ID": str(TG_API_ID),
-        "TG_API_HASH": TG_API_HASH,
-        "GROQ_API_KEY": os.getenv("GROQ_API_KEY", ""),
+        "BOT_TOKEN":      BOT_TOKEN,
+        "OWNER_CHAT_ID":  str(OWNER_ID),
+        "TG_API_ID":      str(TG_API_ID),
+        "TG_API_HASH":    TG_API_HASH,
+        "GROQ_API_KEY":   os.getenv("GROQ_API_KEY", ""),
     }.items() if not v or v == "0"]
     if missing:
         log.warning(f"⚠️ ENV yetishmayapti: {', '.join(missing)}")
     else:
         log.info("✅ Asosiy ENV o'zgaruvchilari ok")
     for k, label in {
-        "GEMINI_API_KEY": "Gemini",
-        "ELEVENLABS_API_KEY": "ElevenLabs TTS",
-        "WEATHER_API_KEY": "Ob-havo",
-        "TG_SESSION_STRING": "Railway session",
-        "AUTO_REPLY_MODE": "AutoReply rejimi",
+        "GEMINI_API_KEY":      "Gemini",
+        "ELEVENLABS_API_KEY":  "ElevenLabs TTS",
+        "WEATHER_API_KEY":     "Ob-havo",
+        "TG_SESSION_STRING":   "Railway session",
+        "AUTO_REPLY_MODE":     "AutoReply rejimi",
     }.items():
         val = os.getenv(k, "")
-        log.info(f"  {'✅' if val else '—'} {label}: {val[:8]+'...' if val and len(val)>8 else val or 'yoq'}")
+        log.info(f"  {'✅' if val else '—'} {label}: "
+                 f"{val[:8]+'...' if val and len(val)>8 else val or 'yoq'}")
 
 
 async def main():
     log.info("🚀 AI Agent (AGMK Mexanik) ishga tushmoqda...")
     check_env()
 
+    # Database
     db = Database()
     await db.init()
     log.info("✅ Database tayyor")
 
+    # PersonalTwin — Raqamli Egizak
+    twin = PersonalTwin()
+    await twin.init_db()
+    log.info("✅ PersonalTwin tayyor")
+
     ai = AIServices()
 
-    # Bot ni avval yaratamiz (AutoReply xabarnomasi uchun kerak)
+    # Bot ni avval yaratamiz (AutoReply xabarnomasi uchun)
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
@@ -86,7 +94,9 @@ async def main():
     await userbot.start(bot_instance=bot)
 
     dp = Dispatcher()
-    register_handlers(dp, db, ai, userbot, OWNER_ID)
+
+    # twin ni handlers ga uzatamiz
+    register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin)
 
     log.info("🤖 Bot ishga tushdi! AGMK 3-MB mexanik AI yordamchisi tayyor 🏭")
 

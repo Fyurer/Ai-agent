@@ -76,3 +76,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+from new_handlers import register_new_handlers
+# ...
+autopilot = register_new_handlers(dp, db, ai, userbot, OWNER_ID)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AI Agent Bot — Railway deployment
-aiogram (bot token) + Telethon (userbot) + Groq + Gemini + SQLite
+AI Agent Bot — AGMK 3-mis boyitish fabrika mexanigi uchun
+aiogram + Telethon (userbot) + Groq + Gemini + ElevenLabs TTS + SQLite
 """
 
 import asyncio
@@ -34,21 +34,21 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────
-BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
-OWNER_ID     = int(os.getenv("OWNER_CHAT_ID", "0"))
-TG_API_ID    = int(os.getenv("TG_API_ID", "0"))
-TG_API_HASH  = os.getenv("TG_API_HASH", "")
-TG_PHONE     = os.getenv("TG_PHONE", "")
+BOT_TOKEN   = os.getenv("BOT_TOKEN", "")
+OWNER_ID    = int(os.getenv("OWNER_CHAT_ID", "0"))
+TG_API_ID   = int(os.getenv("TG_API_ID", "0"))
+TG_API_HASH = os.getenv("TG_API_HASH", "")
+TG_PHONE    = os.getenv("TG_PHONE", "")
 
 async def main():
-    log.info("🤖 AI Agent ishga tushmoqda...")
+    log.info("🤖 AI Agent (AGMK Mexanik) ishga tushmoqda...")
 
     # Database
     db = Database()
     await db.init()
     log.info("✅ Database tayyor")
 
-    # AI Services
+    # AI Services (mexanik uchun)
     ai = AIServices()
 
     # UserBot (Telethon)
@@ -66,9 +66,8 @@ async def main():
     # Handlerlarni ro'yxatdan o'tkazish
     register_handlers(dp, db, ai, userbot, OWNER_ID)
 
-    log.info("✅ Bot ishga tushdi!")
+    log.info("✅ Bot ishga tushdi! AGMK 3-MB mexanigi AI yordamchisi tayyor 🏭")
 
-    # Polling
     try:
         await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     finally:

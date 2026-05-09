@@ -1,134 +1,127 @@
-# 🤖 AI Agent Bot — Railway Deploy
+# 🤖 AI Agent — AGMK 3-Mis Boyitish Fabrika Mexanigi
 
-## ⚡ O'rnatish (15 daqiqa)
-
----
-
-### 1-QADAM — Bot yaratish (@BotFather)
-
-1. Telegramda `@BotFather` ga yozing
-2. `/newbot` → nom bering → username bering
-3. **BOT_TOKEN** ni saqlang
+**O'tkirbek uchun shaxsiy Telegram AI yordamchisi**
 
 ---
 
-### 2-QADAM — Chat ID olish (@userinfobot)
+## 🆕 Yangi funksiyalar
 
-1. `@userinfobot` ga `/start` yuboring
-2. **Your ID** raqamini saqlang — bu OWNER_CHAT_ID
+### 🎤 ElevenLabs TTS — Ovozli xabar yuborish
+```
+Azizga ovozli yoz: kechikmoqdaman
+Shodigа ovoz: yig'ilishga 10 daqiqada keling
+```
+Bot avval AI yordamida professional vositachi matni tuzadi, keyin ElevenLabs orqali ovozga aylantirib yuboradi:
+> *"Assalomu alaykum! Men O'tkirbek ning sun'iy intellekt yordamchisiman. O'tkirbek sizga ular uchrashuvga bir oz kechikishlarini aytdi."*
 
 ---
 
-### 3-QADAM — Session String olish (Termux da)
+## ⚙️ Texnik funksiyalar
 
+### 🔧 Qurilma muammolari
+```
+Nasos ishlamayapti
+Kompressor tekshirish tartibi
+Konveyerdagi muammo
+```
+
+### 📐 Hisob-kitoblar
+```
+Gidravlik hisob: sarif=50, diametr=100, uzunlik=200
+Pnevmatik hisob: hajm=10, bosim=8, vaqt=5
+Podshipnik resursi: C=50, P=20, n=1500
+```
+
+### 🦺 Xavfsizlik
+```
+Elektr ishi oldidan xavfsizlik
+Balandlikda ishlash xavfsizligi
+Bosimli tizimda ishlash
+Baxtsiz hodisa bo'ldi → ko'rsatma
+Yong'in chiqdi → avariya tartibi
+```
+
+### 📋 Hujjatlar
+```
+Defekt akti: qurilma=Nasos №3, nuqson=muhr yeyilgan
+Ish hisoboti: bugungi smena bajarildi...
+Xizmat xati: kimga=sexboshlig'i, mavzu=kapital ta'mirlash
+PPR jadvali: nasos, kompressor, konveyer
+```
+
+### 🖼 Chertyo'j tahlili
+Rasm yuboring + `chertyo'j` yoki `sxema` deb yozing → AI tahlil qiladi
+
+---
+
+## 🛠 O'rnatish
+
+### 1. Requirements
 ```bash
-# Termux da:
-pkg install python -y
-pip install telethon python-dotenv -q
+pip install -r requirements.txt
+```
+
+### 2. .env fayli
+```bash
+cp .env.example .env
+# .env ni to'ldiring
+```
+
+### 3. Session olish (Railway uchun)
+```bash
 python get_session.py
+# TG_SESSION_STRING ni .env ga qo'shing
 ```
 
-Telefon kodi so'raydi → kiritasiz → **SESSION STRING** chiqadi → saqlang!
-
----
-
-### 4-QADAM — GitHub ga yuklash
-
-1. GitHub.com → New repository → `ai-agent-bot`
-2. Barcha fayllarni yuklang (ZIP ichidagilarni)
-3. `.env.example` faylini **YUKLAMANG** (maxfiy)
-
+### 4. Ishga tushirish
 ```bash
-# Yoki Termux da:
-git clone https://github.com/SIZNING_USERNAME/ai-agent-bot
-cd ai-agent-bot
-# fayllarni ko'chiring
-git add .
-git commit -m "AI Agent bot"
-git push
+python bot.py
 ```
 
 ---
 
-### 5-QADAM — Railway deploy
+## 🔑 Kerakli API kalitlar
 
-1. **railway.app** ga kiring → GitHub bilan login
-2. **New Project** → **Deploy from GitHub repo**
-3. Repozitoriyangizni tanlang
-4. **Variables** bo'limiga kiring, quyidagilarni qo'shing:
-
-```
-BOT_TOKEN          = 7123456789:AAF...
-OWNER_CHAT_ID      = 123456789
-TG_API_ID          = 12345678
-TG_API_HASH        = abc123...
-TG_PHONE           = +998901234567
-TG_SESSION_STRING  = (3-qadamdan)
-GROQ_API_KEY       = gsk_...
-GEMINI_API_KEY     = AIza...
-WEATHER_API_KEY    = (ixtiyoriy)
-MEMORY_DAYS        = 60
-```
-
-5. **Deploy** tugmasini bosing
-6. **Logs** da `✅ Bot ishga tushdi!` ko'rsangiz — tayyor!
+| Xizmat | Link | Narx |
+|--------|------|------|
+| Telegram Bot Token | @BotFather | Bepul |
+| Telegram API ID/Hash | my.telegram.org | Bepul |
+| Groq (Llama 3 + Whisper) | console.groq.com | Bepul |
+| Gemini 1.5 Flash | aistudio.google.com | Bepul |
+| **ElevenLabs TTS** | elevenlabs.io | 10k belgi/oy bepul |
+| OpenWeatherMap | openweathermap.org | Bepul |
 
 ---
 
-## 🎮 Bot Buyruqlari
-
-| Yozasiz | Bot nima qiladi |
-|---------|-----------------|
-| `Azizga yoz: ertaga 10da` | Azizga sizning nomingizdan yuboradi |
-| `Eslab qol: shartnoma 15-may` | Xotiraga saqlaydi |
-| `Vazifa: hisobot tayyorla` | Vazifa qo'shadi |
-| `Vazifa 2 bajarildi` | 2-vazifani yopadi |
-| `1000 dollar necha so'm` | CBU kursini ko'rsatadi |
-| `Toshkentda ob-havo` | Ob-havo beradi |
-| `/tasks` | Vazifalar ro'yxati |
-| `/notes` | Zametka ro'yxati |
-| `/report` | Haftalik hisobot |
-| `/memory` | Xotira statistikasi |
-| `/cleanup` | Eski ma'lumotlar tozalash |
-| 🎤 Ovozli xabar | Gemini tahlil qiladi |
-| 📄 PDF fayl | Gemini tahlil qiladi |
-| 🖼 Rasm | Gemini tahlil qiladi |
-
----
-
-## 🔒 Xavfsizlik
-
-- Bot faqat **OWNER_CHAT_ID** dan kelgan xabarlarga javob beradi
-- Boshqalar yozsa — **jim turadi** (hech qanday javob yo'q)
-- Session string maxfiy — hech kimga bermang
-
----
-
-## 📁 Fayl Tuzilmasi
+## 📁 Fayl tuzilmasi
 
 ```
-ai-agent-bot/
-├── bot.py              ← Asosiy fayl
-├── database.py         ← SQLite boshqaruvi
-├── ai_services.py      ← Groq + Gemini
-├── userbot.py          ← Telethon (nomingizdan yuborish)
-├── handlers.py         ← Barcha buyruqlar
-├── get_session.py      ← Session olish (bir marta)
-├── requirements.txt    ← Paketlar
-├── railway.toml        ← Railway sozlamalar
-└── .env.example        ← Namuna sozlamalar
+├── bot.py              # Asosiy kirish nuqtasi
+├── handlers.py         # Barcha handlerlar + TTS yuborish
+├── ai_services.py      # Groq + Gemini + mexanik prompt
+├── mechanic_service.py # ⭐ Mexanik uchun barcha funksiyalar
+├── tts_service.py      # ⭐ ElevenLabs TTS xizmati
+├── userbot.py          # Telethon + send_voice
+├── database.py         # SQLite
+├── get_session.py      # Session string olish
+├── requirements.txt
+├── railway.toml
+└── .env.example
 ```
 
 ---
 
-## ❓ Muammolar
+## 💡 Foydali maslahatlar
 
-**Bot javob bermayapti:**
-- Railway Logs da xatolikni ko'ring
-- OWNER_CHAT_ID to'g'riligini tekshiring
+**Chertyo'j yuborishda:** Rasm bilan birga `chertyo'j` so'zini yozing
+```
+[rasm] + "Bu chertyo'jni tushuntir, o'lchamlarni ko'rsat"
+```
 
-**UserBot ishlamayapti:**
-- TG_SESSION_STRING ni qayta oling (get_session.py)
+**Ovozli buyruq berish:**
+Telefonda gaplashing → bot transkripsiya qiladi → kerakli funksiyani bajaradi
 
-**Groq xatosi:**
-- console.groq.com da API kalitni tekshiring
+**Defekt akti tezda:**
+```
+Defekt akti: qurilma=Flotatsiya mashinasi №4, joy=1-qavat, nuqson=turbina podshipnik yeyilgan, muddat=3 kun
+```

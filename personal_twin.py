@@ -76,8 +76,8 @@ class PersonalTwin:
 
     async def _seed_knowledge(self, db):
         """Boshlang'ich shaxsiy ma'lumotlarni yuklash"""
-        count = await db.execute("SELECT COUNT(*) FROM twin_knowledge")
-        row   = await (await count).fetchone()
+        cursor = await db.execute("SELECT COUNT(*) FROM twin_knowledge")
+        row    = await cursor.fetchone()
         if row[0] > 0:
             return  # Allaqo'shilgan
 
@@ -116,8 +116,8 @@ class PersonalTwin:
             await db.commit()
 
             # Har 20 ta yangi namunadan keyin uslubni yangilash
-            count = await db.execute("SELECT COUNT(*) FROM twin_samples")
-            total = (await (await count).fetchone())[0]
+            count_cur = await db.execute("SELECT COUNT(*) FROM twin_samples")
+            total = (await count_cur.fetchone())[0]
             if total % 20 == 0:
                 await self._update_style_analysis(db)
 

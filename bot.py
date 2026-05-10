@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-AI Agent Bot — AGMK 3-mis boyitish fabrika mexanigi
-Railway platformasi uchun optimallashtirilgan
+AI Agent Bot v4.0 — AGMK 3-MBF Mexanik O'tkirbek
+OpenRouter + Groq + Railway
 """
 
 import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -16,13 +17,16 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
-from database      import Database
-from userbot       import UserBot
-from ai_services   import AIServices
-from personal_twin import PersonalTwin
-from handlers      import register_handlers
+from database    import Database
+from userbot     import UserBot
+from ai_services import AIServices
+from handlers    import register_handlers
 
-# ── Logging ───────────────────────────────────────────────────
+try:
+    from personal_twin import PersonalTwin
+except ImportError:
+    PersonalTwin = None
+
 log_handlers = [logging.StreamHandler(sys.stdout)]
 try:
     log_handlers.append(logging.FileHandler("bot.log", encoding="utf-8"))
@@ -41,64 +45,117 @@ OWNER_ID    = int(os.getenv("OWNER_CHAT_ID", "0"))
 TG_API_ID   = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
 TG_PHONE    = os.getenv("TG_PHONE", "")
+OWNER_NAME  = os.getenv("OWNER_NAME", "O'tkirbek")
 
 
 def check_env():
-    missing = [k for k, v in {
-        "BOT_TOKEN":      BOT_TOKEN,
-        "OWNER_CHAT_ID":  str(OWNER_ID),
-        "TG_API_ID":      str(TG_API_ID),
-        "TG_API_HASH":    TG_API_HASH,
-        "GROQ_API_KEY":   os.getenv("GROQ_API_KEY", ""),
-    }.items() if not v or v == "0"]
-    if missing:
-        log.warning(f"⚠️ ENV yetishmayapti: {', '.join(missing)}")
-    else:
-        log.info("✅ Asosiy ENV o'zgaruvchilari ok")
-    for k, label in {
-        "GEMINI_API_KEY":      "Gemini",
-        "ELEVENLABS_API_KEY":  "ElevenLabs TTS",
-        "WEATHER_API_KEY":     "Ob-havo",
-        "TG_SESSION_STRING":   "Railway session",
-        "AUTO_REPLY_MODE":     "AutoReply rejimi",
-    }.items():
-        val = os.getenv(k, "")
-        log.info(f"  {'✅' if val else '—'} {label}: "
-                 f"{val[:8]+'...' if val and len(val)>8 else val or 'yoq'}")
+    for k, v in {"BOT_TOKEN": BOT_TOKEN, "GROQ_API_KEY": os.getenv("GROQ_API_KEY","")}.items():
+        if not v:
+            log.warning(f"⚠️ {k} yo'q!")
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
+    log.info(f"  {'✅' if or_key else '❌'} OpenRouter API: {'sozlangan' if or_key else 'YOQ — PDF/rasm/tarjima ishlamaydi'}")
+    log.info(f"  {'✅' if os.getenv('TG_SESSION_STRING') else '⚠️'} UserBot session")
+    log.info(f"  {'✅' if os.getenv('WEATHER_API_KEY') else '—'} Ob-havo API")
+
+
+# ── Kunlik Briefing ────────────────────────────────────────────
+async def send_daily_briefing(bot: Bot, db: Database, ai: AIServices):
+    """Har kuni ertalab soat 7:00 da briefing yuborish"""
+    while True:
+        now = datetime.now()
+        # Ertalab 7:00 da ishlaydi
+        if now.hour == 7 and now.minute == 0:
+            try:
+                # Bugungi vazifalar
+                tasks   = await db.get_tasks("pending")
+                pending = len(tasks)
+                urgent  = [t for t in tasks if t["due"] and t["due"][:10] == now.strftime("%Y-%m-%d")]
+
+                # Eslatmalar
+                reminders = await db.get_pending_reminders()
+
+                briefing = (
+                    f"☀️ *Xayrli tong, {OWNER_NAME}!*\n"
+                    f"📅 _{now.strftime('%d %B %Y, %A')}_\n\n"
+                )
+
+                if urgent:
+                    briefing += f"🔴 *Bugun muddati tugaydigan vazifalar:*\n"
+                    for t in urgent[:3]:
+                        briefing += f"  • {t['title']}\n"
+                    briefing += "\n"
+
+                if pending:
+                    briefing += f"📋 Jami faol vazifalar: *{pending}* ta\n"
+
+                if reminders:
+                    briefing += f"\n🔔 *Eslatmalar ({len(reminders)} ta):*\n"
+                    for r in reminders[:3]:
+                        short = r["text"][:60] + ("..." if len(r["text"]) > 60 else "")
+                        briefing += f"  • _{short}_\n"
+
+                briefing += f"\n💡 Samarali ish kuni tilayman! /help — buyruqlar"
+
+                await bot.send_message(OWNER_ID, briefing)
+                log.info("✅ Kunlik briefing yuborildi")
+
+                # Bir marta yuborish uchun 61 soniya kutish
+                await asyncio.sleep(61)
+            except Exception as e:
+                log.error(f"Briefing xatosi: {e}")
+
+        await asyncio.sleep(30)
+
+
+# ── Eslatma tekshiruvi ─────────────────────────────────────────
+async def check_task_reminders(bot: Bot, db: Database):
+    """Har 10 daqiqada vazifa muddatlarini tekshirish"""
+    while True:
+        try:
+            reminders = await db.get_upcoming_reminders()
+            for r in reminders:
+                await bot.send_message(
+                    OWNER_ID,
+                    f"⏰ *Eslatma!*\n\n*{r['title']}*\n📅 Muddat: {r['due'][:16]}\n_Muddat yaqinlashmoqda!_"
+                )
+                await db.mark_reminder_sent(r["id"])
+        except Exception as e:
+            log.error(f"Reminder check xatosi: {e}")
+        await asyncio.sleep(600)  # 10 daqiqa
 
 
 async def main():
-    log.info("🚀 AI Agent (AGMK Mexanik) ishga tushmoqda...")
+    log.info("🚀 AI Agent v4.0 (AGMK MBF-3) ishga tushmoqda...")
     check_env()
 
-    # Database
     db = Database()
     await db.init()
     log.info("✅ Database tayyor")
 
-    # PersonalTwin — Raqamli Egizak
-    twin = PersonalTwin()
-    await twin.init_db()
-    log.info("✅ PersonalTwin tayyor")
+    twin = None
+    if PersonalTwin:
+        twin = PersonalTwin()
+        await twin.init_db()
+        log.info("✅ PersonalTwin tayyor")
 
     ai = AIServices()
 
-    # Bot ni avval yaratamiz (AutoReply xabarnomasi uchun)
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
 
-    # UserBot + AutoReply
     userbot = UserBot(TG_API_ID, TG_API_HASH, TG_PHONE)
     await userbot.start(bot_instance=bot)
 
     dp = Dispatcher()
-
-    # twin ni handlers ga uzatamiz
     register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin)
 
-    log.info("🤖 Bot ishga tushdi! AGMK 3-MB mexanik AI yordamchisi tayyor 🏭")
+    log.info("🤖 Bot ishga tushdi! AGMK 3-MBF mexanik AI yordamchisi tayyor 🏭")
+
+    # Fon vazifalari
+    asyncio.create_task(send_daily_briefing(bot, db, ai))
+    asyncio.create_task(check_task_reminders(bot, db))
 
     try:
         await dp.start_polling(

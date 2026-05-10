@@ -1,192 +1,93 @@
 """
-AI Services — OpenRouter (Llama 3 + Vision) + Groq Whisper
-Mexanik O'tkirbek uchun maxsus prompt
-OpenRouter orqali Gemini va boshqa modellarga ulanish
+AI Services v4.0 — OpenRouter (Gemini o'rniga) + Groq Whisper
+AGMK 3-MBF Mexanik O'tkirbek uchun
 """
 
-import os
-import json
-import re
-import tempfile
-import logging
+import os, json, re, tempfile, base64, logging
 import aiohttp
 from groq import Groq
 
 log = logging.getLogger(__name__)
 
-GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL       = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
 
-MECHANIC_SYSTEM = """Sen Olmaliq kon-metallurgiya kombinati (AGMK) 3-mis boyitish fabrikasida 
-mexanik bo'lib ishlaydigan O'tkirbek ning shaxsiy AI yordamchisisan.
-
-Sening ixtisosliging:
-- Sanoat nasoslari, kompressorlar, konveyerlar, tegirmonlar, flotatsiya mashinalari
-- Gidravlik va pnevmatik tizimlar
-- PPR (profilaktik ta'mirlash) va kapital ta'mirlash
-- GOST standartlari (rus va O'zbekiston)
-- Chertyo'j va texnik sxemalar o'qish
-- Xavfsizlik talablari (OHSAS 18001, GOST 12.0)
-- Defekt aktlari, xizmat xatlari, ish hisobotlari
-- O'zbek va rus tillarida texnik terminologiya
-
-Javob berish uslubi:
-- Aniq, qisqa va professional
-- Kerak bo'lsa formulalar va hisob-kitoblar
-- GOST raqamlarini ko'rsat
-- Xavfsizlik ogohlantirishlarini yoz ⚠️
-- Telegram Markdown (*bold*, _italic_, `kod`) ishlatishingiz mumkin
-- O'zbek tilida gapir, texnik atamalar rus/ingliz tilida bo'lishi mumkin
-"""
+MECHANIC_SYSTEM = """Sen AGMK 3-mis boyitish fabrikasida mexanik bo'lib ishlaydigan O'tkirbek ning AI yordamchisisan.
+Ixtisosliging: Warman nasoslari, ABB/GMD dvigatellar, konveyerlar, flotatsiya mashinalari, PPR, GOST standartlari.
+Javob: aniq, qisqa, professional. Xavfsizlik ⚠️ ogohlantirishlarini yoz. Telegram Markdown ishlatishingiz mumkin."""
 
 
 class AIServices:
     def __init__(self):
-        self.groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        self.openrouter_key = OPENROUTER_API_KEY
-        self.openrouter_model = OPENROUTER_MODEL
+        self.groq    = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
+        self._or_key = OPENROUTER_KEY
 
-    async def _openrouter_request(self, messages: list, max_tokens: int = 1200, temperature: float = 0.6) -> str:
-        """OpenRouter API orqali so'rov yuborish"""
-        if not self.openrouter_key:
-            log.warning("OpenRouter API key topilmadi, Groq-ga o'tish...")
-            return None
-
+    async def _openrouter(self, messages: list, max_tokens: int = 1500, model: str = None) -> str:
+        if not self._or_key:
+            return "❌ OPENROUTER_API_KEY sozlanmagan. Railway Variables ga qo'shing."
         headers = {
-            "Authorization": f"Bearer {self.openrouter_key}",
+            "Authorization": f"Bearer {self._or_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://t.me/agmk_mexanik_bot",
-            "X-Title": "AGMK Mexanik AI"
+            "HTTP-Referer": "https://github.com/agmk-bot",
+            "X-Title": "AGMK MBF-3 Bot",
         }
-        
-        payload = {
-            "model": self.openrouter_model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
-        
+        payload = {"model": model or OPENROUTER_MODEL, "messages": messages, "max_tokens": max_tokens}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60)
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data["choices"][0]["message"]["content"]
-                    else:
-                        error_text = await resp.text()
-                        log.error(f"OpenRouter xatosi {resp.status}: {error_text}")
-                        return None
+            async with aiohttp.ClientSession() as s:
+                async with s.post(OPENROUTER_URL, json=payload, headers=headers,
+                                  timeout=aiohttp.ClientTimeout(total=30)) as r:
+                    data = await r.json()
+                    if "error" in data:
+                        return f"❌ OpenRouter: {data['error'].get('message','')}"
+                    return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            log.error(f"OpenRouter so'rov xatosi: {e}")
-            return None
+            return f"❌ OpenRouter xatosi: {e}"
 
     async def detect_intent(self, text: str) -> dict:
-        prompt = f"""Xabarni tahlil qil va FAQAT JSON qaytar (boshqa narsa yozma):
+        prompt = f"""Xabarni tahlil qil va FAQAT JSON qaytар:
 Xabar: "{text}"
 
-Mumkin bo'lgan actionlar:
-- send_message: kimgadir xabar yozish
-- voice_send: ovozli xabar yuborish (ElevenLabs TTS)
-- save_note, add_task, get_tasks, done_task
-- currency, weather, report, memory, get_notes
-- equipment_info: qurilma muammolari (nasos, kompressor va h.k.)
-- safety_check: xavfsizlik checklisti
-- incident: hodisa ko'rsatmasi
-- hydraulic_calc: gidravlik hisob
-- pneumatic_calc: pnevmatik hisob
-- bearing_calc: podshipnik resurs
-- defect_act: defekt akti yozish
-- work_report: ish hisoboti
-- service_letter: xizmat xati
-- ppr_schedule: PPR jadvali
-- drawing_analysis: chertyo'j tahlili
-- spare_part_calc: ehtiyot qismlar hisobi
-- request_generator: ariza/zayavka yaratish
-- trend_analysis: trend tahlili
-- chat: oddiy suhbat
-
-{{"action":"...",
-"target":"kimga yozish ismi yoki null",
-"content":"asosiy mazmun",
-"deadline":"muddat yoki null",
-"task_id":"vazifa raqami yoki null",
-"city":"shahar yoki null",
-"equipment":"qurilma nomi yoki null",
-"work_type":"ish turi xavfsizlik uchun yoki null",
-"params":{{}}}}"""
-
+{{"action":"send_message|voice_send|save_note|add_task|get_tasks|done_task|currency|weather|get_notes|report|memory|equipment_info|safety_check|incident|hydraulic_calc|defect_act|work_report|service_letter|ppr_schedule|request_form|shift_handover|emergency_sim|translate_doc|spare_calc|group_reminder|chat",
+"target":"null yoki ism",
+"content":"mazmun",
+"deadline":"null",
+"task_id":"null",
+"city":"null",
+"equipment":"null yoki qurilma",
+"work_type":"null",
+"language":"null yoki uz/ru/en"}}"""
         try:
-            # Avval OpenRouter, keyin Groq fallback
-            resp_text = await self._openrouter_request(
-                [{"role": "user", "content": prompt}],
-                max_tokens=300,
-                temperature=0.1
-            )
-            
-            if resp_text is None:
-                # Fallback to Groq
-                resp = self.groq.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=300, temperature=0.1
-                )
-                resp_text = resp.choices[0].message.content
-            
-            clean = re.sub(r'```json|```', '', resp_text).strip()
-            return json.loads(clean)
+            resp = self.groq.chat.completions.create(
+                model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}],
+                max_tokens=300, temperature=0.1)
+            raw = resp.choices[0].message.content
+            return json.loads(re.sub(r'```json|```', '', raw).strip())
         except Exception as e:
             log.warning(f"Intent xatosi: {e}")
             return {"action": "chat"}
 
     async def chat(self, user_text: str, history: list, context: str = "") -> str:
-        system = MECHANIC_SYSTEM
-        if context:
-            system += f"\n\nBazadan topilgan kontekst:\n{context}"
-
+        system = MECHANIC_SYSTEM + (f"\n\nKontekst:\n{context}" if context else "")
         messages = [{"role": "system", "content": system}]
         for h in history[-10:]:
             messages.append({"role": h["role"], "content": h["content"]})
         messages.append({"role": "user", "content": user_text})
-
         try:
-            # Avval OpenRouter
-            resp_text = await self._openrouter_request(
-                messages,
-                max_tokens=1200,
-                temperature=0.6
-            )
-            
-            if resp_text:
-                return resp_text
-            
-            # Fallback to Groq
             resp = self.groq.chat.completions.create(
-                model=GROQ_MODEL, messages=messages,
-                max_tokens=1200, temperature=0.6
-            )
+                model=GROQ_MODEL, messages=messages, max_tokens=1200, temperature=0.6)
             return resp.choices[0].message.content
         except Exception as e:
             return f"❌ AI xatosi: {e}"
 
     async def score_importance(self, text: str) -> float:
-        keywords = [
-            'shartnoma', 'muddat', 'deadline', 'muhim', 'urgent', 'kritik',
-            "to'lov", 'pul', 'kredit', 'bank', 'loyiha', "yig'ilish",
-            'majlis', 'kontrakt', 'qurilish', 'buyurtma', 'imzo',
-            'avaria', 'nosoz', 'to\'xtadi', 'buzildi', 'kapital', 'PPR',
-            'xavf', 'baxtsiz', 'hodisa', 'defekt', 'ta\'mirlash'
-        ]
+        keywords = ['shartnoma','muddat','muhim','urgent','avaria','nosoz',
+                    "to'xtadi",'buzildi','PPR','xavf','hodisa','defekt','eslatilsin']
         score = 0.3
         lower = text.lower()
         for kw in keywords:
-            if kw in lower:
-                score += 0.08
+            if kw in lower: score += 0.08
         if re.search(r'\d{4,}', text): score += 0.1
         if re.search(r'\d{1,2}[-\/]\d{1,2}', text): score += 0.15
         return min(1.0, score)
@@ -194,112 +95,103 @@ Mumkin bo'lgan actionlar:
     async def transcribe_voice(self, audio_bytes: bytes) -> str:
         try:
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-                f.write(audio_bytes)
-                tmp_path = f.name
-
-            with open(tmp_path, "rb") as audio_file:
-                transcription = self.groq.audio.transcriptions.create(
-                    file=("voice.ogg", audio_file, "audio/ogg"),
-                    model="whisper-large-v3",
-                    response_format="text",
-                    language="uz"
-                )
-            os.unlink(tmp_path)
-            result = transcription if isinstance(transcription, str) else getattr(transcription, 'text', '')
-            return result.strip()
+                f.write(audio_bytes); tmp = f.name
+            with open(tmp, "rb") as af:
+                t = self.groq.audio.transcriptions.create(
+                    file=("voice.ogg", af, "audio/ogg"),
+                    model="whisper-large-v3", response_format="text")
+            os.unlink(tmp)
+            return (t if isinstance(t, str) else getattr(t, 'text', '')).strip()
         except Exception as e:
-            log.error(f"Ovoz tahlil xatosi: {e}")
-            return ""
+            log.error(f"Ovoz xatosi: {e}"); return ""
 
     async def analyze_pdf(self, file_bytes: bytes) -> str:
-        """OpenRouter Vision orqali PDF tahlili"""
         try:
-            import base64
-            pdf_b64 = base64.b64encode(file_bytes).decode('utf-8')
-            
-            prompt = """Bu texnik hujjatni o'zbek tilida tahlil qil:
-1. Hujjat turi va mavzusi
-2. Asosiy texnik ma'lumotlar
-3. O'lchamlar, parametrlar, standartlar
-4. Muhim sanalar va muddatlar
-5. Xulosa va tavsiyalar
-
-Mexanik nuqtai nazaridan muhim ma'lumotlarni ajratib ko'rsat."""
-
-            messages = [
-                {"role": "system", "content": "Sen texnik hujjatlarni tahlil qiluvchi ekspert mexaniksan."},
-                {"role": "user", "content": f"PDF kontenti (base64): {pdf_b64[:5000]}\n\n{prompt}"}
-            ]
-            
-            result = await self._openrouter_request(messages, max_tokens=2000, temperature=0.3)
-            if result:
-                return result.strip()
-            return "❌ PDF tahlil qilishda xatolik (OpenRouter ishlamadi)"
+            import io
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                text = "\n".join(p.extract_text() or "" for p in reader.pages[:10])[:6000]
+            except ImportError:
+                return "❌ pypdf o'rnatilmagan. requirements.txt ga qo'shing: pypdf"
+            if not text.strip():
+                return "❌ PDF dan matn ajratib bo'lmadi."
+            return await self._openrouter([{"role": "user", "content":
+                f"Bu texnik hujjatni o'zbek tilida tahlil qil:\n{text}\n\n"
+                "1.Hujjat turi 2.Texnik parametrlar 3.O'lchamlar/standartlar 4.Muhim sanalar 5.Xulosa"}])
         except Exception as e:
-            return f"❌ PDF tahlil xatosi: {e}"
+            return f"❌ PDF xatosi: {e}"
 
     async def analyze_image(self, image_bytes: bytes, extra_prompt: str = "") -> str:
-        """OpenRouter Vision orqali rasm tahlili"""
         try:
-            import base64
-            img_b64 = base64.b64encode(image_bytes).decode('utf-8')
-            
-            if extra_prompt and any(w in extra_prompt.lower() for w in 
-                                     ['chertyo', 'sxema', 'chizma', 'drawing', 'scheme']):
-                prompt = f"""Bu sanoat chertyo'ji yoki texnik sxema. O'zbek tilida tahlil qil:
-
-1. 📐 Nima tasvirlangan (qurilma, tizim, uzlari)
-2. 📏 Ko'rinadigan o'lchamlar va parametrlar
-3. 🔤 Texnik belgilar va qisqartmalar izohi
-4. 📌 GOST/ISO standarti (agar aniqlansa)
-5. ⚙️ Mexanik uchun muhim ma'lumotlar
-6. ⚠️ Xavfsizlik talablari (agar bo'lsa)
-
-Qo'shimcha savol: {extra_prompt}"""
+            b64 = base64.b64encode(image_bytes).decode()
+            if extra_prompt and any(w in extra_prompt.lower() for w in ['chertyo','sxema','chizma','drawing']):
+                prompt = (f"Bu sanoat chertyo'ji. O'zbek tilida:\n1.Nima tasvirlangan\n"
+                         f"2.O'lchamlar\n3.Belgilar izohi\n4.GOST standarti\n5.Mexanik uchun muhim\n"
+                         f"6.⚠️ Xavfsizlik\nSavol: {extra_prompt}")
             else:
-                prompt = extra_prompt or (
-                    "Bu rasmda nima bor? Mexanik nuqtai nazaridan tahlil qil. "
-                    "O'zbek tilida qisqacha va aniq javob ber."
-                )
-
-            messages = [
-                {"role": "system", "content": "Sen sanoat jihozlarini vizual tahlil qiluvchi ekspert mexaniksan."},
-                {"role": "user", "content": f"Rasm (base64): {img_b64}\n\n{prompt}"}
-            ]
-            
-            result = await self._openrouter_request(messages, max_tokens=2000, temperature=0.3)
-            if result:
-                return result.strip()
-            return "❌ Rasm tahlil qilishda xatolik"
+                prompt = extra_prompt or "Bu sanoat rasmini mexanik nuqtai nazaridan tahlil qil. Nosozlik yoki xavfli holat bormi?"
+            messages = [{"role":"user","content":[
+                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}},
+                {"type":"text","text":prompt}]}]
+            return await self._openrouter(messages, model=os.getenv(
+                "OPENROUTER_VISION_MODEL","google/gemini-2.0-flash-exp:free"))
         except Exception as e:
-            return f"❌ Rasm tahlil xatosi: {e}"
+            return f"❌ Rasm xatosi: {e}"
+
+    async def translate_document(self, text: str, target_lang: str = "uz") -> str:
+        langs = {"uz":"o'zbek","ru":"rus","en":"ingliz"}
+        return await self._openrouter([{"role":"user","content":
+            f"Quyidagi texnik matnni {langs.get(target_lang,target_lang)} tiliga tarjima qil. "
+            f"Texnik atamalar uchun asl terminni qavsda qoldir:\n\n{text[:4000]}"}], 2000)
+
+    async def simulate_emergency(self, scenario: str) -> str:
+        return await self._openrouter([
+            {"role":"system","content":MECHANIC_SYSTEM},
+            {"role":"user","content":
+                f"Avariya simulyatsiyasi: {scenario}\n\n"
+                "1.⚠️ Xavf darajasi (1-5)\n2.🔴 Darhol choralar (5 daqiqa)\n"
+                "3.📞 Kimga xabar berish\n4.🔧 Texnik choralar (ketma-ket)\n"
+                "5.🦺 Xavfsizlik\n6.📋 Hujjatlashtirish\n7.🔄 Qayta tiklash"}], 1500)
+
+    async def generate_request_form(self, content: str) -> str:
+        from datetime import datetime
+        now = datetime.now().strftime('%d.%m.%Y')
+        return await self._openrouter([{"role":"user","content":
+            f"Rasmiy so'rov-ariza (zayavka) tayyorla:\n{content}\n\n"
+            f"Format:\nARIZA / ЗАЯВКА\nSana: {now}\nTashkilot: AGMK 3-MBF\n"
+            "Mavzu: ...\nAsoslanish: ...\n"
+            "Jadval: № | Nomi | Miqdori | O'lchov birligi | Izoh\n"
+            "Imzo: Mexanik O'tkirbek"}], 800)
+
+    async def generate_shift_handover(self, info: str) -> str:
+        from datetime import datetime
+        now = datetime.now()
+        return await self._openrouter([{"role":"user","content":
+            f"Smena topshirish protokoli:\nMa'lumot: {info}\n\n"
+            f"📋 SMENA TOPSHIRISH PROTOKOLI\n"
+            f"🗓 {now.strftime('%d.%m.%Y')} | ⏰ {now.strftime('%H:%M')}\n"
+            "✅ BAJARILGAN ISHLAR:\n⚠️ DAVOM ETAYOTGAN MUAMMOLAR:\n"
+            "🔧 KEYINGI SMENAGA TOPSHIRIQ:\n📊 USKUNALAR HOLATI:\nImzo:___"}], 1000)
+
+    async def calc_bearing_life(self, params: str) -> str:
+        return await self._openrouter([
+            {"role":"system","content":MECHANIC_SYSTEM},
+            {"role":"user","content":
+                f"Podshipnik resursini hisoblа (ISO 281):\n{params}\n\n"
+                "1.L10 resurs (soat) formulasi bilan\n"
+                "2.Tavsiya etilgan almashtirish muddati\n"
+                "3.Yog'lash intervali\n4.Monitoring parametrlari"}], 800)
 
     async def build_voice_proxy_text(self, original_msg: str, owner_name: str = "O'tkirbek") -> str:
-        """Foydalanuvchi xabari → vositachi ovoz matni (ElevenLabs uchun)"""
-        prompt = f"""
-        Quyidagi xabarni professional vositachi tarzida qayta yoz:
-        Original xabar: "{original_msg}"
-        
-        Format: "Assalomu alaykum! Men {owner_name} ning sun'iy intellekt yordamchisiman. 
-        {owner_name} sizga quyidagini yetkazishimni so'radi: [xabar mazmuni]"
-        
-        Faqat tayyor matnni yoz, boshqa izoh qo'shma. O'zbek tilida.
-        """
         try:
-            resp_text = await self._openrouter_request(
-                [{"role": "user", "content": prompt}],
-                max_tokens=300,
-                temperature=0.5
-            )
-            if resp_text:
-                return resp_text.strip()
-            
-            # Fallback to Groq
             resp = self.groq.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=300, temperature=0.5
-            )
+                model=GROQ_MODEL, max_tokens=300, temperature=0.5,
+                messages=[{"role":"user","content":
+                    f"Xabarni professional vositachi tarzida o'zbek tilida qayta yoz:\n"
+                    f"Original: \"{original_msg}\"\n"
+                    f"Format: \"Assalomu alaykum! Men {owner_name}ning AI yordamchisiman. "
+                    f"{owner_name} sizga shuni yetkazishni so'radi: [mazmun]\""}])
             return resp.choices[0].message.content.strip()
-        except Exception as e:
-            return f"Assalomu alaykum! Men {owner_name} ning AI yordamchisiman. Xabar: {original_msg}"
+        except Exception:
+            return f"Assalomu alaykum! Men {owner_name}ning AI yordamchisiman. Xabar: {original_msg}"

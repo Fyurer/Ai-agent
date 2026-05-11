@@ -56,24 +56,32 @@ class AIServices:
             return f"❌ OpenRouter xatosi: {e}"
 
     async def detect_intent(self, text: str) -> dict:
-        prompt = f"""Xabarni tahlil qil va FAQAT JSON qaytар:
-Xabar: "{text}"
-
-{{"action":"send_message|voice_send|save_note|add_task|get_tasks|done_task|currency|weather|get_notes|report|memory|equipment_info|safety_check|incident|hydraulic_calc|defect_act|work_report|service_letter|ppr_schedule|request_form|shift_handover|emergency_sim|translate_doc|spare_calc|group_reminder|chat",
-"target":"null yoki ism",
-"content":"mazmun",
-"deadline":"null",
-"task_id":"null",
-"city":"null",
-"equipment":"null yoki qurilma",
-"work_type":"null",
-"language":"null yoki uz/ru/en"}}"""
+        """Xabar maqsadini aniqlash. Shubhali holatlarda chat qaytaradi."""
+        prompt = (
+            f'Quyidagi xabarning maqsadini aniqla va FAQAT JSON qaytар. Boshqa hech narsa yozma.\n\n'
+            f'Xabar: "{text}"\n\n'
+            'QOIDALAR (muhim):\n'
+            '- Savol, suhbat, maslahat, texnik yordam = action="chat"\n'
+            '- "send_message" FAQAT "Azizga yoz: ..." shakli uchun\n'
+            '- target aniq ism bo\'lmasa = action="chat"\n'
+            '- Shubha bo\'lsa = action="chat"\n\n'
+            '{"action":"send_message|voice_send|save_note|add_task|get_tasks|done_task|'
+            'currency|weather|get_notes|report|memory|safety_check|incident|'
+            'hydraulic_calc|defect_act|work_report|service_letter|ppr_schedule|chat",'
+            '"target":"null","content":"xabar matni","deadline":"null",'
+            '"task_id":"null","city":"null","equipment":"null","work_type":"null"}'
+        )
         try:
             resp = self.groq.chat.completions.create(
                 model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}],
                 max_tokens=300, temperature=0.1)
             raw = resp.choices[0].message.content
-            return json.loads(re.sub(r'```json|```', '', raw).strip())
+            parsed = json.loads(re.sub(r'```json|```', '', raw).strip())
+            # Xavfsizlik: target aniq bo'lmasa chat ga o'tkazish
+            target = str(parsed.get("target", "null")).lower().strip()
+            if target in ("null", "none", "", "0", "unknown", "noma'lum"):
+                parsed["action"] = "chat"
+            return parsed
         except Exception as e:
             log.warning(f"Intent xatosi: {e}")
             return {"action": "chat"}

@@ -512,10 +512,14 @@ def quick_intent(text: str) -> tuple:
             if pm: params[key] = float(pm.group(1))
         return ("bearing_calc", params)
 
-    # Qurilma muammolari
-    for eq in ['nasos','kompressor','konveyер','tegirmon','flotatsiya']:
-        if eq in tl:
-            return ("equipment_info", {"equipment": eq})
+    # Qurilma muammolari — FAQAT muammo/nosozlik so'zlari bilan birga
+    problem_words = ['ishlamay','nosoz','muammo','buzil','toxta','xato',
+                     'tekshir','yoqilmay','qizib','vibrats','sizib','tiqil',
+                     'qollanma','haqida ma','kerak','nima qil']
+    if any(pw in tl for pw in problem_words):
+        for eq in ['nasos','kompressor','konveyer','konveyer','tegirmon','flotatsiya']:
+            if eq in tl:
+                return ("equipment_info", {"equipment": eq})
 
     # Xavfsizlik
     if any(w in tl for w in ['xavfsizlik','checklist','ruxsatnoma','xavfli ish']):
@@ -566,15 +570,16 @@ async def process_text(text: str, db: Database, ai: AIServices,
             data.get("target",""), data.get("content",""), userbot, ai, tts)
 
     elif action == "send_message":
-        target  = data.get("target") or data.get("to") or ""
+        target      = data.get("target") or data.get("to") or ""
         content_msg = data.get("content") or data.get("message") or ""
-        # null/none bo'lsa chat ga o'tkazish
-        if str(target).lower() in ("null", "none", "", "0") or not content_msg:
-            # AI ga chat sifatida yuborish
+        # target aniq ism bo'lmasa — oddiy AI suhbat
+        if str(target).lower() in ("null", "none", "", "0", "unknown", "noma'lum") or not target:
             memories = await db.get_relevant_memories(text)
             context  = "\n".join(f"• {m}" for m in memories) if memories else ""
             history  = await db.get_conversation_history()
             return await ai.chat(text, history, context)
+        if not content_msg:
+            return "❓ Nima yozishni aytmadingiz. Format:\n`Azizga yoz: ertaga uchrashemiz`"
         return await action_send_message(target, content_msg, userbot)
 
     elif action == "contacts":
@@ -683,15 +688,16 @@ async def process_text(text: str, db: Database, ai: AIServices,
         if kb_answer:
             return kb_answer
 
-        # PersonalTwin bilan javob (siz kabi gapiradi)
+        # PersonalTwin bilan javob — faqat tayyor bo'lganda (>=10 namuna)
         if personal_twin:
-            memories = await db.get_relevant_memories(text)
-            context  = "\n".join(f"• {m}" for m in memories) if memories else ""
-            history  = await db.get_conversation_history()
-            # PersonalTwin uslubda javob
-            reply = await personal_twin.generate_reply(text, "")
-            if reply:
-                return reply
+            try:
+                stats = await personal_twin.get_stats()
+                if stats.get("ready", False):
+                    reply = await personal_twin.generate_reply(text, "")
+                    if reply and len(reply) > 5:
+                        return reply
+            except Exception as _pt_err:
+                log.warning(f"PersonalTwin xatosi: {_pt_err}")
 
         # Oddiy AI chat (fallback)
         memories = await db.get_relevant_memories(text)

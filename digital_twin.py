@@ -79,7 +79,7 @@ class DigitalTwin:
                     work_type    TEXT,
                     description  TEXT,
                     parts_used   TEXT,
-                    performed_by TEXT DEFAULT 'O'\''tkirbek',
+                    performed_by TEXT DEFAULT 'Otkirbek',
                     duration_h   REAL,
                     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );

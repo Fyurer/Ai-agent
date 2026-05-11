@@ -117,7 +117,9 @@ class AIServices:
             with open(tmp, "rb") as af:
                 t = self.groq.audio.transcriptions.create(
                     file=("voice.ogg", af, "audio/ogg"),
-                    model="whisper-large-v3", response_format="text")
+                    model="whisper-large-v3",
+                    response_format="text",
+                    language="uz")          # ← faqat o'zbek tili
             os.unlink(tmp)
             return (t if isinstance(t, str) else getattr(t, 'text', '')).strip()
         except Exception as e:

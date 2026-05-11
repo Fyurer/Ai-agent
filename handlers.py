@@ -134,7 +134,8 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`Defekt akti:` / `Ish hisoboti:` / `PPR jadvali:`\n\n"
             "🎤 *OVOZLI XABAR:*\n"
             "`Azizga ovozli yoz: 15 daqiqa kechikaman`\n\n"
-            "/tasks /notes /report /memory /cleanup /voices"
+            "/tasks /notes /report /memory /cleanup /voices\n"
+            "/twin_status /twin_add /twin_teach /twin_teach_bulk"
         )
 
     # ── Digital Twin ─────────────────────────────────────────
@@ -473,6 +474,73 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             topic, val = "general", rest
         await personal_twin.add_knowledge(topic.strip(), val.strip())
         await msg.answer(f"✅ Bilim bazasiga qo'shildi:\n_{val.strip()}_")
+
+    @dp.message(Command("twin_teach"))
+    async def cmd_twin_teach(msg: Message):
+        """
+        Men qanaqa javob berganim misol qo'shish:
+        /twin_teach savol >>> mening javobim
+        Misol: /twin_teach Siz kimsiz? >>> O'tkirbekman, nima kerak?
+        """
+        if not is_owner(msg): return
+        if not personal_twin:
+            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
+            return
+        rest = msg.text.split(maxsplit=1)[1] if len(msg.text.split()) > 1 else ""
+        if ">>>" not in rest:
+            await msg.answer(
+                "📝 *Foydalanish:*\n"
+                "`/twin_teach savol >>> mening javobim`\n\n"
+                "*Misol:*\n"
+                "`/twin_teach Siz kimsiz? >>> O'tkirbekman, nima kerak?`\n"
+                "`/twin_teach Qayerdasiz? >>> Ishda`\n"
+                "`/twin_teach Salom >>> Salom, nima gap?`"
+            )
+            return
+        parts   = rest.split(">>>", 1)
+        savol   = parts[0].strip()
+        javobim = parts[1].strip()
+        await personal_twin.learn_from_message(javobim, situation=savol)
+        await msg.answer(
+            f"✅ *O'rgatildi!*\n\n"
+            f"❓ Savol: _{savol}_\n"
+            f"✅ Javobim: _{javobim}_\n\n"
+            f"_Bot endi shu uslubda javob beradi_"
+        )
+
+    @dp.message(Command("twin_teach_bulk"))
+    async def cmd_twin_teach_bulk(msg: Message):
+        """
+        Ko'p misollarni birdan qo'shish:
+        /twin_teach_bulk
+        Salom >>> Salom, nima gap?
+        Qayerdasiz? >>> Ishda
+        Siz kimsiz? >>> O'tkirbekman
+        """
+        if not is_owner(msg): return
+        if not personal_twin:
+            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
+            return
+        lines = msg.text.split("\n")[1:]  # birinchi qator = buyruq
+        count = 0
+        errors = []
+        for line in lines:
+            line = line.strip()
+            if not line or ">>>" not in line:
+                continue
+            parts = line.split(">>>", 1)
+            savol   = parts[0].strip()
+            javobim = parts[1].strip()
+            if savol and javobim:
+                await personal_twin.learn_from_message(javobim, situation=savol)
+                count += 1
+        if count:
+            await msg.answer(f"✅ *{count} ta misol o'rgatildi!*\nBot endi shu namunalardan o'rganadi.")
+        else:
+            await msg.answer(
+                "❌ Hech narsa topilmadi.\n\n"
+                "Format:\n`savol >>> javob`\n`savol >>> javob`"
+            )
 
     @dp.message(F.text)
     async def handle_text(msg: Message):

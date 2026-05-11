@@ -162,21 +162,19 @@ class AIServices:
         return any(kw in t for kw in self.SAVE_KEYWORDS)
 
     async def _fix_uzbek_transcription(self, raw: str) -> str:
-        """
-        Whisper xatolarini AI bilan tuzatish.
-        Faqat imlo/alifbo, mazmun o'zgarmasin.
-        """
         try:
             prompt = (
-                "Sanoat mexanigining ovozdan tanilgan matni:\n"
+                "Sanoat mexanigining ovozdan noto'g'ri tanilgan matni:\n"
                 f'"{raw}"\n\n'
-                "Qoidalar:\n"
-                "1. To'g'ri O'ZBEK LOTIN yozuviga o'tkazish\n"
-                "2. Aniq imlo xatolarini tuzatish\n"
-                "3. Texnik so'zlarni to'g'ri yoz: "
-                "melnitsa/meltnitsa, bolt, nasos, konveyer, PPR va h.k.\n"
-                "4. Mazmunni O'ZGARTIRMA\n"
-                "5. FAQAT tuzatilgan matn — hech qanday izoh yo'q\n"
+                "VAZIFA — matnni to'g'ri o'zbek tiliga qayta yoz:\n"
+                "• Imlo xatolarini tuzat\n"
+                "• O'xshash tovushli so'zlarni kontekstga qarab to'g'irla:\n"
+                "  'kurshamiz'→'ko'rishamiz', 'sotuvda'→'shu tufayli' yoki kontekstga mos\n"
+                "  'erdigi'→'ertaga', 'yoz'→'yoz' (mavsim yoki buyruq — kontekstga qarab)\n"
+                "  'salam'→'salom', 'azizgi'→'Azizga'\n"
+                "• Shaxs ismlarini katta harf bilan yoz\n"
+                "• Mazmunni O'ZGARTIRMA — faqat noto'g'ri so'zlarni to'g'irla\n"
+                "• FAQAT tuzatilgan matn — izoh yo'q, tirnoq yo'q\n"
             )
             resp = self.groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
@@ -184,9 +182,7 @@ class AIServices:
                 max_tokens=400,
                 temperature=0.05
             )
-            fixed = resp.choices[0].message.content.strip().split('\n')[0].strip()
-            # Tirnoqlarni olib tashla
-            fixed = fixed.strip('"\'')
+            fixed = resp.choices[0].message.content.strip().split('\n')[0].strip('"\'')
             log.info(f"🎤 '{raw}' → '{fixed}'")
             return fixed if fixed else raw
         except Exception as e:

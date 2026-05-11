@@ -4,13 +4,16 @@ Barcha funksiyalar: Vizual Defektoskopiya, HSE Audit, Sensor Tahlili,
 Digital Twin, Knowledge Base RAG, AutoPilot, AutoReply boshqaruvi
 """
 
-import os, re, logging, aiohttp, tempfile, json
+import os, re, logging, aiohttp, tempfile, json, uuid
 from datetime import datetime
 from aiogram import Dispatcher, F
 from aiogram.types import (Message, BufferedInputFile,
                            InlineKeyboardMarkup, InlineKeyboardButton,
                            CallbackQuery)
 from aiogram.filters import Command
+
+# ── Ovoz buyruqlari vaqtinchalik xotirasi (callback_data 64b limit) ──
+_VOICE_CMD_STORE: dict = {}   # {uid: {"action":..,"data":..,"text":..}}
 
 from database      import Database
 from ai_services   import AIServices
@@ -410,23 +413,17 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             }
 
             if action in CONFIRM_ACTIONS:
-                # Buyruq topildi — tasdiq so'ra
                 label, desc = _voice_action_label(action, data)
-                payload = json.dumps({"action": action, "data": data,
-                                      "text": text}, ensure_ascii=False)[:512]
+                # Xotirada saqlash, callback ga faqat qisqa uid
+                uid = str(uuid.uuid4())[:8]
+                _VOICE_CMD_STORE[uid] = {"action": action, "data": data, "text": text}
                 confirm_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="✅ Bajar",
-                        callback_data=f"vcmd_yes|{payload}"
-                    ),
-                    InlineKeyboardButton(
-                        text="❌ Kerak emas",
-                        callback_data="vcmd_no"
-                    )
+                    InlineKeyboardButton(text="✅ Bajar",      callback_data=f"vcmd_yes|{uid}"),
+                    InlineKeyboardButton(text="❌ Kerak emas", callback_data=f"vcmd_no|{uid}")
                 ]])
                 await wait.edit_text(
                     f"🎤 *Eshitildi:*\n_{text}_\n\n"
-                    f"🔍 *Aniqlangan buyruq:* {label}\n"
+                    f"🔍 *Buyruq:* {label}\n"
                     f"📋 {desc}\n\n"
                     f"_Bajarayinmi?_",
                     reply_markup=confirm_kb
@@ -467,29 +464,32 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     async def cb_voice_confirm(call: CallbackQuery):
         await call.answer("✅ Bajarilmoqda...")
         try:
-            payload_str = call.data.split("|", 1)[1]
-            payload = json.loads(payload_str)
-            action  = payload["action"]
-            data    = payload["data"]
-            text    = payload.get("text", "")
-
+            uid     = call.data.split("|", 1)[1]
+            payload = _VOICE_CMD_STORE.pop(uid, None)
+            if not payload:
+                await call.message.answer("❌ Buyruq muddati o'tdi, qayta yuboring.")
+                return
+            text = payload.get("text", "")
             resp = await process_text(
                 text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin
             )
+            # Tugmalarni o'chir
+            orig = call.message.text or ""
             await call.message.edit_text(
-                call.message.text.split("\n\n_Bajarayinmi?_")[0] +
-                f"\n\n✅ *Bajarildi!*"
+                orig.split("\n\n_Bajarayinmi?_")[0] + "\n\n✅ *Bajarildi!*"
             )
             await call.message.answer(resp)
         except Exception as e:
             await call.message.answer(f"❌ Xatolik: {e}")
 
-    @dp.callback_query(F.data == "vcmd_no")
+    @dp.callback_query(F.data.startswith("vcmd_no|"))
     async def cb_voice_cancel(call: CallbackQuery):
+        uid = call.data.split("|", 1)[1]
+        _VOICE_CMD_STORE.pop(uid, None)
         await call.answer("❌ Bekor qilindi")
+        orig = call.message.text or ""
         await call.message.edit_text(
-            call.message.text.split("\n\n🔍")[0] +
-            "\n\n_❌ Buyruq bekor qilindi_"
+            orig.split("\n\n🔍")[0] + "\n\n_❌ Bekor qilindi_"
         )
 
     # ── Ovoz — eslab qolish callbacklari ─────────────────────

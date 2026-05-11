@@ -19,12 +19,6 @@ from vision_service   import VisionService
 from knowledge_base   import KnowledgeBase
 from digital_twin     import DigitalTwin
 
-# ── Yangi funksiyalar uchun ───────────────────────────────────
-try:
-    from personal_twin import PersonalTwin
-except ImportError:
-    PersonalTwin = None
-
 log        = logging.getLogger(__name__)
 OWNER_NAME = os.getenv("OWNER_NAME", "O'tkirbek")
 
@@ -51,7 +45,11 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     import asyncio
     async def _init_services():
         await kb.init()
-        await digit_twin.init()
+        try:
+            await digit_twin.init()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"DigitalTwin init xatosi: {e}")
         if personal_twin:
             await personal_twin.init_db()
     try:
@@ -386,60 +384,6 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         await personal_twin.add_knowledge(topic.strip(), val.strip())
         await msg.answer(f"✅ Bilim bazasiga qo'shildi:\n_{val.strip()}_")
 
-    @dp.message(Command("incidents"))
-    async def cmd_incidents(msg: Message):
-        if not is_owner(msg): return
-        incidents = await db.get_incidents(10)
-        if not incidents:
-            await msg.answer("📋 Hodisalar jurnali bo'sh.")
-            return
-        sev_icon = {"low":"🟡","medium":"🟠","high":"🔴","critical":"💥"}
-        lines = ["🚨 *Hodisalar jurnali:*\n"]
-        for inc in incidents:
-            icon = sev_icon.get(inc["severity"],"⚪")
-            date = inc["date"][:10] if inc["date"] else ""
-            lines.append(f"{icon} #{inc['id']} {inc['title']} — _{date}_")
-        await msg.answer("\n".join(lines))
-
-    @dp.message(Command("reminders"))
-    async def cmd_reminders(msg: Message):
-        if not is_owner(msg): return
-        reminders = await db.get_all_reminders(15)
-        if not reminders:
-            await msg.answer("🔔 Guruh eslatmalari yo'q.")
-            return
-        lines = ["🔔 *Guruh eslatmalari:*\n"]
-        for r in reminders:
-            sent = "✅" if r["sent"] else "⏳"
-            date = r["created"][:16] if r["created"] else ""
-            short = r["text"][:60] + ("..." if len(r["text"]) > 60 else "")
-            lines.append(f"{sent} {date}\n_{short}_\n")
-        await msg.answer("\n".join(lines)[:4000])
-
-    @dp.message(Command("shifts"))
-    async def cmd_shifts(msg: Message):
-        if not is_owner(msg): return
-        logs = await db.get_shift_logs(5)
-        if not logs:
-            await msg.answer("📋 Smena protokollari yo'q.")
-            return
-        lines = ["📋 *So'nggi smena protokollari:*\n"]
-        for sl in logs:
-            lines.append(f"📅 {sl['date']} ({sl['type']})\n{sl['content'][:100]}...\n")
-        await msg.answer("\n".join(lines)[:4000])
-
-    @dp.message(Command("requests"))
-    async def cmd_requests(msg: Message):
-        if not is_owner(msg): return
-        reqs = await db.get_requests(10)
-        if not reqs:
-            await msg.answer("📝 Arizalar yo'q.")
-            return
-        lines = ["📝 *Arizalar:*\n"]
-        for r in reqs:
-            lines.append(f"#{r['id']} {r['title']} — _{r['date'][:10]}_")
-        await msg.answer("\n".join(lines))
-
     @dp.message(F.text)
     async def handle_text(msg: Message):
         if not is_owner(msg): return
@@ -596,40 +540,6 @@ def quick_intent(text: str) -> tuple:
     if '/report' in tl: return ("report", {})
     if '/memory' in tl or 'xotira holati' in tl: return ("memory", {})
 
-    # ── Yangi funksiyalar ────────────────────────────────────
-    # Ariza/Zayavka
-    if any(w in tl for w in ['ariza', 'zayavka', 'sorov yoz', 'buyurtma ber',
-                              'salnk kerak', 'podshipnik kerak', 'ehtiyot qism kerak']):
-        return ("request_form", {"content": t})
-
-    # Smena topshirish
-    if any(w in tl for w in ['smena topshir', 'shift handover', 'smena protokol',
-                              'smenani yoz', 'smena hisoboti yoz']):
-        return ("shift_handover", {"content": t})
-
-    # Avariya simulyatsiya
-    if any(w in tl for w in ['agar', 'simulyatsiya', 'nima boladi agar',
-                              'ishdan chiqsa', 'yonib ketsa', 'portlasa']):
-        return ("emergency_sim", {"content": t})
-
-    # Tarjima
-    if any(w in tl for w in ['tarjima', 'translate', 'перевод', "o'zbek tiliga",
-                              "rus tiliga", "ingliz tiliga"]):
-        lang = "ru" if "rus" in tl else "en" if "ingliz" in tl else "uz"
-        return ("translate_doc", {"content": t, "language": lang})
-
-    # Podshipnik resurs
-    if any(w in tl for w in ['podshipnik resurs', 'bearing life', 'qancha ishlaydi']):
-        return ("spare_calc", {"content": t})
-
-    # Eslatilsin (guruh xabarlaridan)
-    if 'eslatilsin' in tl or 'eslatish kerak' in tl or 'esimga sol' in tl:
-        import re as _re
-        # Vaqtni ajratib olish
-        time_match = _re.search(r'soat\s+(\d{1,2}:\d{2})', tl)
-        remind_at = time_match.group(1) if time_match else None
-        return ("group_reminder", {"content": t, "deadline": remind_at})
-
     return (None, {})
 
 
@@ -656,7 +566,16 @@ async def process_text(text: str, db: Database, ai: AIServices,
             data.get("target",""), data.get("content",""), userbot, ai, tts)
 
     elif action == "send_message":
-        return await action_send_message(data.get("target",""), data.get("content",""), userbot)
+        target  = data.get("target") or data.get("to") or ""
+        content_msg = data.get("content") or data.get("message") or ""
+        # null/none bo'lsa chat ga o'tkazish
+        if str(target).lower() in ("null", "none", "", "0") or not content_msg:
+            # AI ga chat sifatida yuborish
+            memories = await db.get_relevant_memories(text)
+            context  = "\n".join(f"• {m}" for m in memories) if memories else ""
+            history  = await db.get_conversation_history()
+            return await ai.chat(text, history, context)
+        return await action_send_message(target, content_msg, userbot)
 
     elif action == "contacts":
         return await action_get_contacts(userbot)
@@ -757,36 +676,6 @@ async def process_text(text: str, db: Database, ai: AIServices,
     elif action == "ppr_schedule":
         return await mech.generate_ppr_schedule(data.get("equipment",["nasos"]))
 
-    # ── Yangi funksiyalar ────────────────────────────────────
-    elif action == "request_form":
-        content_text = data.get("content") or text
-        result = await ai.generate_request_form(content_text)
-        rid = await db.add_request(content_text[:50], result)
-        return f"📋 *Ariza #{rid} tayyorlandi:*\n\n{result}"
-
-    elif action == "shift_handover":
-        content_text = data.get("content") or text
-        result = await ai.generate_shift_handover(content_text)
-        await db.add_shift_log(result)
-        return f"📋 *Smena protokoli saqlandi:*\n\n{result}"
-
-    elif action == "emergency_sim":
-        return await ai.simulate_emergency(data.get("content") or text)
-
-    elif action == "translate_doc":
-        lang = data.get("language", "uz")
-        return await ai.translate_document(data.get("content") or text, lang)
-
-    elif action == "spare_calc":
-        return await ai.calc_bearing_life(data.get("content") or text)
-
-    elif action == "group_reminder":
-        content_text = data.get("content") or text
-        remind_at = data.get("deadline")
-        rid = await db.add_group_reminder(0, text, content_text, remind_at)
-        time_str = f"\n⏰ Vaqt: {remind_at}" if remind_at else ""
-        return f"🔔 *Eslatma #{rid} saqlandi!*{time_str}\n\n_{content_text}_\n\n/reminders — barcha eslatmalar"
-
     else:
         # ── RAG + AI suhbat ─────────────────────────────────
         # Avval KB dan qidirish
@@ -853,8 +742,13 @@ async def action_send_voice_message(target, content, userbot, ai, tts):
 
 
 async def action_send_message(target, content, userbot):
+    # null, none, yoki bo'sh target bo'lsa yuborma
     if not target or not content:
         return "❓ Format:\n`Azizga yoz: ertaga uchrashemiz`"
+    if str(target).lower() in ("null", "none", "", "unknown"):
+        return "❓ Kimga yozish kerak? Format:\n`Azizga yoz: ertaga uchrashemiz`"
+    if len(str(target)) < 2:
+        return "❓ Ism juda qisqa. Format:\n`Azizga yoz: ertaga uchrashemiz`"
     if not userbot.is_connected:
         return "❌ UserBot ulanmagan."
     res = await userbot.send_message(target, content)
@@ -953,10 +847,5 @@ async def get_notes_text(db):
 async def get_report_text(db):
     stats = await db.get_weekly_stats()
     return (f"📊 *Haftalik Hisobot* _{datetime.now().strftime('%d.%m.%Y')}_\n\n"
-            f"💬 Xabarlar: {stats['messages']}\n"
-            f"📝 Zametka: {stats['notes']}\n"
-            f"✅ Bajarilgan: {stats['done']}\n"
-            f"⏳ Kutilayotgan: {stats['pending']}\n"
-            f"🚨 Hodisalar: {stats.get('incidents',0)}\n"
-            f"🔔 Eslatmalar: {stats.get('reminders',0)}\n"
-            f"🧠 Xotira: {stats['memories']}")
+            f"💬 {stats['messages']} xabar | 📝 {stats['notes']} zametka\n"
+            f"✅ {stats['done']} bajarildi | ⏳ {stats['pending']} kutmoqda")

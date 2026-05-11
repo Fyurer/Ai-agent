@@ -151,7 +151,7 @@ class PersonalTwin:
             return resp.choices[0].message.content.strip()
         except Exception as e:
             log.error(f"Twin javob xatosi: {e}")
-            return "Tushunarli. Keyinroq xabar beraman." if lang == "uz" else "Понял. Отпишу позже."
+            return "Salom! Nima yordam kerak?" if lang == "uz" else "Привет! Чем могу помочь?"
 
     async def add_knowledge(self, topic: str, content: str, source: str = "manual"):
         async with aiosqlite.connect(DB_PATH) as db:

@@ -111,6 +111,10 @@ class AIServices:
         return min(1.0, score)
 
     async def transcribe_voice(self, audio_bytes: bytes) -> str:
+        """
+        1. Whisper bilan transkripsiya (language=uz)
+        2. AI orqali o'zbek lotin yozuviga tuzatish va matn tozalash
+        """
         try:
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
                 f.write(audio_bytes); tmp = f.name
@@ -119,11 +123,41 @@ class AIServices:
                     file=("voice.ogg", af, "audio/ogg"),
                     model="whisper-large-v3",
                     response_format="text",
-                    language="uz")          # ← faqat o'zbek tili
+                    language="uz")
             os.unlink(tmp)
-            return (t if isinstance(t, str) else getattr(t, 'text', '')).strip()
+            raw = (t if isinstance(t, str) else getattr(t, 'text', '')).strip()
+            if not raw:
+                return ""
+            # AI tuzatish qatlami
+            return await self._fix_uzbek_transcription(raw)
         except Exception as e:
             log.error(f"Ovoz xatosi: {e}"); return ""
+
+    async def _fix_uzbek_transcription(self, raw: str) -> str:
+        """
+        Whisper kiril/qozoq/xato harflari chiqarsa —
+        AI uni to'g'ri o'zbek lotin yozuviga o'giradi va mazmunini saqlaydi.
+        """
+        try:
+            prompt = (
+                "Quyidagi matn ovozdan avtomatik tanildi, lekin imlo xatolari bo'lishi mumkin.\n"
+                "Matnni to'g'ri O'ZBEK LOTIN yozuviga o'tkazib, imlo xatolarini tuzat.\n"
+                "Mazmunini O'ZGARTIRMA — faqat to'g'ri yoz.\n"
+                "Faqat tuzatilgan matnni yoz, boshqa hech narsa qo'shma.\n\n"
+                f"Asl matn: {raw}"
+            )
+            resp = self.groq.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,
+                temperature=0.1
+            )
+            fixed = resp.choices[0].message.content.strip()
+            log.info(f"Transkripsiya: '{raw}' → '{fixed}'")
+            return fixed if fixed else raw
+        except Exception as e:
+            log.warning(f"Transkripsiya tuzatish xatosi: {e}")
+            return raw  # xato bo'lsa asl matni qaytaradi
 
     async def analyze_pdf(self, file_bytes: bytes) -> str:
         try:

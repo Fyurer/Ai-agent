@@ -112,8 +112,8 @@ class AIServices:
 
     async def transcribe_voice(self, audio_bytes: bytes) -> str:
         """
-        1. Whisper bilan transkripsiya (language=uz)
-        2. AI orqali o'zbek lotin yozuviga tuzatish va matn tozalash
+        1. Whisper bilan transkripsiya
+        2. Kuchli AI tuzatish — mazmun, imlo, kontekst
         """
         try:
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
@@ -123,41 +123,52 @@ class AIServices:
                     file=("voice.ogg", af, "audio/ogg"),
                     model="whisper-large-v3",
                     response_format="text",
-                    language="uz")
+                    language="uz",
+                    prompt=(
+                        "O'zbek tilida sanoat mexanigi gapirmoqda. "
+                        "Umumiy so'zlar: meltnitsa, bolt, nasos, konveyer, motor, "
+                        "flanets, podshipnik, muhr, PPR, nosoz, singan, almashtirildi, "
+                        "eslab qol, zametka, vazifa, hisobot, bugun, ertaga."
+                    )
+                )
             os.unlink(tmp)
             raw = (t if isinstance(t, str) else getattr(t, 'text', '')).strip()
             if not raw:
                 return ""
-            # AI tuzatish qatlami
             return await self._fix_uzbek_transcription(raw)
         except Exception as e:
             log.error(f"Ovoz xatosi: {e}"); return ""
 
     async def _fix_uzbek_transcription(self, raw: str) -> str:
         """
-        Whisper kiril/qozoq/xato harflari chiqarsa —
-        AI uni to'g'ri o'zbek lotin yozuviga o'giradi va mazmunini saqlaydi.
+        Whisper xatolarini AI bilan tuzatish.
+        Mazmunni saqlaydi, faqat imlo/alifbo xatolarini to'g'rilaydi.
         """
         try:
             prompt = (
-                "Quyidagi matn ovozdan avtomatik tanildi, lekin imlo xatolari bo'lishi mumkin.\n"
-                "Matnni to'g'ri O'ZBEK LOTIN yozuviga o'tkazib, imlo xatolarini tuzat.\n"
-                "Mazmunini O'ZGARTIRMA — faqat to'g'ri yoz.\n"
-                "Faqat tuzatilgan matnni yoz, boshqa hech narsa qo'shma.\n\n"
-                f"Asl matn: {raw}"
+                "Sen o'zbek tili mutaxassisisan. "
+                "Quyidagi matn ovozdan avtomatik tanildi — ba'zi so'zlar xato yozilgan bo'lishi mumkin.\n\n"
+                "VAZIFANG:\n"
+                "1. Matnni to'g'ri O'ZBEK LOTIN yozuviga o'tkazish\n"
+                "2. Aniq imlo xatolarini tuzatish (masalan: 'Qozli'→'Ovozli', 'melnitsada'→'melnitsa')\n"
+                "3. Mazmunni MUTLAQO O'ZGARTIRMA\n"
+                "4. Faqat tuzatilgan matnni yoz — hech qanday izoh yoki qo'shimcha so'z yo'q\n\n"
+                f"Matn: {raw}"
             )
             resp = self.groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
-                temperature=0.1
+                max_tokens=400,
+                temperature=0.05
             )
             fixed = resp.choices[0].message.content.strip()
-            log.info(f"Transkripsiya: '{raw}' → '{fixed}'")
+            # Agar AI javobida izoh bo'lsa — faqat birinchi qatorni ol
+            fixed = fixed.split('\n')[0].strip()
+            log.info(f"🎤 Transkripsiya: '{raw}' → '{fixed}'")
             return fixed if fixed else raw
         except Exception as e:
             log.warning(f"Transkripsiya tuzatish xatosi: {e}")
-            return raw  # xato bo'lsa asl matni qaytaradi
+            return raw
 
     async def analyze_pdf(self, file_bytes: bytes) -> str:
         try:

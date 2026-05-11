@@ -7,7 +7,9 @@ Digital Twin, Knowledge Base RAG, AutoPilot, AutoReply boshqaruvi
 import os, re, logging, aiohttp, tempfile
 from datetime import datetime
 from aiogram import Dispatcher, F
-from aiogram.types import Message, BufferedInputFile
+from aiogram.types import (Message, BufferedInputFile,
+                           InlineKeyboardMarkup, InlineKeyboardButton,
+                           CallbackQuery)
 from aiogram.filters import Command
 
 from database      import Database
@@ -123,9 +125,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`/autopilot_whitelist` — faqat ruxsatlilarga\n"
             "`/autopilot_off` — o'chirish\n"
             "`/autopilot_pause 60` — 60 daqiqa to'xtatish\n"
-            "`/autopilot_status` — holat\n"
-            "`/autopilot_history 10` — oxirgi suhbatlar (savol+javob)\n"
-            "`/autopilot_stats` — statistika\n\n"
+            "`/autopilot_status` — holat\n\n"
             "🔧 *TEXNIK YORDAM:*\n"
             "`Nasos ishlamayapti` / `Kompressor muammo`\n"
             "`Elektr ishi xavfsizligi` / `Yong'in chiqdi`\n"
@@ -134,8 +134,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`Defekt akti:` / `Ish hisoboti:` / `PPR jadvali:`\n\n"
             "🎤 *OVOZLI XABAR:*\n"
             "`Azizga ovozli yoz: 15 daqiqa kechikaman`\n\n"
-            "/tasks /notes /report /memory /cleanup /voices\n"
-            "/twin_status /twin_add /twin_teach /twin_teach_bulk"
+            "/tasks /notes /report /memory /cleanup /voices"
         )
 
     # ── Digital Twin ─────────────────────────────────────────
@@ -228,51 +227,6 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             await msg.answer("\n".join(lines))
         else:
             await msg.answer("❌ AutoReply moduli ulanmagan.")
-
-    @dp.message(Command("autopilot_history"))
-    async def cmd_ap_history(msg: Message):
-        if not is_owner(msg): return
-        if not userbot.auto_reply:
-            await msg.answer("❌ AutoReply moduli ulanmagan.")
-            return
-        args  = msg.text.split()
-        limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 10
-        rows  = await userbot.auto_reply.get_chat_history(limit)
-        if not rows:
-            await msg.answer("📭 Hali hech qanday suhbat yo'q.")
-            return
-        lines = [f"📋 *AutoPilot — oxirgi {len(rows)} ta suhbat:*\n"]
-        for name, uname, question, reply, created_at in rows:
-            ustr   = f" (@{uname})" if uname else ""
-            dt     = created_at[:16] if created_at else "?"
-            lines.append(
-                f"━━━━━━━━━━━━━━━\n"
-                f"👤 *{name}*{ustr} | 🕐 {dt}\n"
-                f"❓ _{question[:150]}_\n"
-                f"✅ _{reply[:150]}_"
-            )
-        # Xabar uzun bo'lsa bo'laklarga bo'lib yuborish
-        full = "\n".join(lines)
-        if len(full) <= 4000:
-            await msg.answer(full)
-        else:
-            chunk = ""
-            for line in lines:
-                if len(chunk) + len(line) > 3800:
-                    await msg.answer(chunk)
-                    chunk = ""
-                chunk += line + "\n"
-            if chunk:
-                await msg.answer(chunk)
-
-    @dp.message(Command("autopilot_stats"))
-    async def cmd_ap_stats(msg: Message):
-        if not is_owner(msg): return
-        if not userbot.auto_reply:
-            await msg.answer("❌ AutoReply moduli ulanmagan.")
-            return
-        stats = await userbot.auto_reply.get_chat_stats()
-        await msg.answer(stats)
 
     # ── Standart buyruqlar ───────────────────────────────────
     @dp.message(Command("tasks"))
@@ -367,12 +321,51 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             if not text:
                 await wait.edit_text("❌ Ovozni tushunib bo'lmadi.")
                 return
-            await wait.edit_text(f"🎤 _Eshitildi:_ {text}\n\n⏳ _Qayta ishlanmoqda..._")
-            resp = await process_text(text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin)
+
+            # Inline keyboard — eslab qolish/qolmaslik
+            save_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="💾 Eslab qol",
+                    callback_data=f"voice_save|{text[:200]}"
+                ),
+                InlineKeyboardButton(
+                    text="✖️ Kerak emas",
+                    callback_data="voice_skip"
+                )
+            ]])
+
+            await wait.edit_text(
+                f"🎤 *Eshitildi:*\n_{text}_",
+                reply_markup=save_kb
+            )
+
+            # Javobi ham ko'rsatsin
+            resp = await process_text(
+                text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin
+            )
             await msg.answer(resp)
             await db.save_message(msg.from_user.id, "in", text, "voice")
+
         except Exception as e:
             await wait.edit_text(f"❌ Xatolik: {e}")
+
+    @dp.callback_query(F.data.startswith("voice_save|"))
+    async def cb_voice_save(call: CallbackQuery):
+        content = call.data.split("|", 1)[1]
+        imp  = await ai.score_importance(content)
+        perm = imp >= 0.6
+        await db.add_note(content, is_pinned=perm)
+        await db.save_memory(content, "voice_note", perm, imp)
+        flag = " ⭐ _Muhim sifatida saqlandi_" if perm else ""
+        await call.message.edit_text(
+            f"💾 *Eslab qolindi!*{flag}\n\n_{content}_"
+        )
+        await call.answer("✅ Saqlandi!")
+
+    @dp.callback_query(F.data == "voice_skip")
+    async def cb_voice_skip(call: CallbackQuery):
+        await call.message.edit_reply_markup(reply_markup=None)
+        await call.answer("✖️ O'tkazib yuborildi")
 
     @dp.message(F.document)
     async def handle_document(msg: Message):
@@ -474,73 +467,6 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             topic, val = "general", rest
         await personal_twin.add_knowledge(topic.strip(), val.strip())
         await msg.answer(f"✅ Bilim bazasiga qo'shildi:\n_{val.strip()}_")
-
-    @dp.message(Command("twin_teach"))
-    async def cmd_twin_teach(msg: Message):
-        """
-        Men qanaqa javob berganim misol qo'shish:
-        /twin_teach savol >>> mening javobim
-        Misol: /twin_teach Siz kimsiz? >>> O'tkirbekman, nima kerak?
-        """
-        if not is_owner(msg): return
-        if not personal_twin:
-            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
-            return
-        rest = msg.text.split(maxsplit=1)[1] if len(msg.text.split()) > 1 else ""
-        if ">>>" not in rest:
-            await msg.answer(
-                "📝 *Foydalanish:*\n"
-                "`/twin_teach savol >>> mening javobim`\n\n"
-                "*Misol:*\n"
-                "`/twin_teach Siz kimsiz? >>> O'tkirbekman, nima kerak?`\n"
-                "`/twin_teach Qayerdasiz? >>> Ishda`\n"
-                "`/twin_teach Salom >>> Salom, nima gap?`"
-            )
-            return
-        parts   = rest.split(">>>", 1)
-        savol   = parts[0].strip()
-        javobim = parts[1].strip()
-        await personal_twin.learn_from_message(javobim, situation=savol)
-        await msg.answer(
-            f"✅ *O'rgatildi!*\n\n"
-            f"❓ Savol: _{savol}_\n"
-            f"✅ Javobim: _{javobim}_\n\n"
-            f"_Bot endi shu uslubda javob beradi_"
-        )
-
-    @dp.message(Command("twin_teach_bulk"))
-    async def cmd_twin_teach_bulk(msg: Message):
-        """
-        Ko'p misollarni birdan qo'shish:
-        /twin_teach_bulk
-        Salom >>> Salom, nima gap?
-        Qayerdasiz? >>> Ishda
-        Siz kimsiz? >>> O'tkirbekman
-        """
-        if not is_owner(msg): return
-        if not personal_twin:
-            await msg.answer("❌ PersonalTwin moduli yuklanmagan.")
-            return
-        lines = msg.text.split("\n")[1:]  # birinchi qator = buyruq
-        count = 0
-        errors = []
-        for line in lines:
-            line = line.strip()
-            if not line or ">>>" not in line:
-                continue
-            parts = line.split(">>>", 1)
-            savol   = parts[0].strip()
-            javobim = parts[1].strip()
-            if savol and javobim:
-                await personal_twin.learn_from_message(javobim, situation=savol)
-                count += 1
-        if count:
-            await msg.answer(f"✅ *{count} ta misol o'rgatildi!*\nBot endi shu namunalardan o'rganadi.")
-        else:
-            await msg.answer(
-                "❌ Hech narsa topilmadi.\n\n"
-                "Format:\n`savol >>> javob`\n`savol >>> javob`"
-            )
 
     @dp.message(F.text)
     async def handle_text(msg: Message):

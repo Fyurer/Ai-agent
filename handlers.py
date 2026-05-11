@@ -4,7 +4,7 @@ Barcha funksiyalar: Vizual Defektoskopiya, HSE Audit, Sensor Tahlili,
 Digital Twin, Knowledge Base RAG, AutoPilot, AutoReply boshqaruvi
 """
 
-import os, re, logging, aiohttp, tempfile
+import os, re, logging, aiohttp, tempfile, json
 from datetime import datetime
 from aiogram import Dispatcher, F
 from aiogram.types import (Message, BufferedInputFile,
@@ -310,6 +310,51 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     #  MEDIA HANDLERLAR
     # ════════════════════════════════════════════════════════
 
+    # ── Ovoz xabari buyruqlarini tasdiqlovchi yordamchi ──────
+    def _voice_action_label(action: str, data: dict) -> tuple[str, str]:
+        """
+        Buyruq nomi va tavsifi. (emoji_label, tavsif)
+        """
+        labels = {
+            "send_message":   ("💬 Xabar yuborish",
+                               f"📤 {data.get('target','')} ga: «{data.get('content','')[:80]}»"),
+            "voice_send":     ("🎤 Ovozli xabar",
+                               f"📤 {data.get('target','')} ga ovozli: «{data.get('content','')[:80]}»"),
+            "save_note":      ("💾 Zametka saqlash",
+                               f"📝 «{data.get('content','')[:100]}»"),
+            "add_task":       ("✅ Vazifa qo'shish",
+                               f"📋 «{data.get('content','')[:80]}»" +
+                               (f" | 📅 {data.get('deadline')}" if data.get('deadline') else "")),
+            "done_task":      ("✔️ Vazifa yopish",
+                               f"Vazifa #{data.get('task_id','')} bajarildi deb belgilanadi"),
+            "weather":        ("🌤 Ob-havo",
+                               f"📍 {data.get('city','Olmaliq')} ob-havosi ko'rsatiladi"),
+            "currency":       ("💱 Valyuta kursi",     "Hozirgi kurs ko'rsatiladi"),
+            "kb_search":      ("📚 Bilim bazasi",
+                               f"🔍 «{data.get('query','')[:80]}» qidiriladi"),
+            "equipment_info": ("🔧 Qurilma ma'lumoti",
+                               f"📖 {data.get('equipment','')} haqida ma'lumot"),
+            "safety_check":   ("🦺 Xavfsizlik",        "Xavfsizlik cheklisti ko'rsatiladi"),
+            "incident":       ("🚨 Hodisa",             "Hodisa yo'riqnomasi ko'rsatiladi"),
+            "hydraulic_calc": ("📐 Gidravlik hisob",   "Hisob bajariladi"),
+            "pneumatic_calc": ("💨 Pnevmatik hisob",   "Hisob bajariladi"),
+            "bearing_calc":   ("⚙️ Podshipnik resurs", "Hisob bajariladi"),
+            "defect_act":     ("📄 Defekt akti",        "Hujjat yaratiladi"),
+            "work_report":    ("📊 Ish hisoboti",       "Hujjat yaratiladi"),
+            "service_letter": ("✉️ Xizmat xati",        "Hujjat yaratiladi"),
+            "ppr_schedule":   ("🗓 PPR jadvali",        "Jadval yaratiladi"),
+            "twin_update":    ("🤖 Digital Twin",
+                               f"📡 {data.get('equipment_id','')} holati yangilanadi"),
+            "twin_predict":   ("🔮 Prognoz",
+                               f"📈 {data.get('equipment_id','')} uchun prognoz"),
+            "twin_maintenance":("🛠 Ta'mirlash logi",  "Loga yoziladi"),
+            "contacts":       ("👥 Kontaktlar",         "Kontaktlar ro'yxati ko'rsatiladi"),
+            "report":         ("📈 Hisobot",            "Kunlik hisobot ko'rsatiladi"),
+            "memory":         ("🧠 Xotira holati",      "Xotira statistikasi ko'rsatiladi"),
+        }
+        return labels.get(action, ("⚡ Buyruq", f"Amal: {action}"))
+
+    # ── Ovozli xabar handler ──────────────────────────────────
     @dp.message(F.voice)
     async def handle_voice(msg: Message):
         if not is_owner(msg): return
@@ -317,38 +362,137 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         try:
             file  = await msg.bot.get_file(msg.voice.file_id)
             audio = (await msg.bot.download_file(file.file_path)).read()
-            text  = await ai.transcribe_voice(audio)
+
+            result = await ai.transcribe_voice(audio)
+            if isinstance(result, tuple):
+                text, should_save = result
+            else:
+                text, should_save = result, False
+
             if not text:
                 await wait.edit_text("❌ Ovozni tushunib bo'lmadi.")
                 return
 
-            # Inline keyboard — eslab qolish/qolmaslik
-            save_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(
-                    text="💾 Eslab qol",
-                    callback_data=f"voice_save|{text[:200]}"
-                ),
-                InlineKeyboardButton(
-                    text="✖️ Kerak emas",
-                    callback_data="voice_skip"
+            await db.save_message(msg.from_user.id, "in", text, "voice")
+
+            # Buyruqni aniqlash
+            action, data = quick_intent(text)
+            if action is None:
+                intent = await ai.detect_intent(text)
+                action = intent.get("action", "chat")
+                data   = intent
+
+            # Saqlash so'zi bor — avtomatik saqlash
+            if should_save:
+                imp  = await ai.score_importance(text)
+                perm = imp >= 0.6
+                await db.add_note(text, is_pinned=perm)
+                await db.save_memory(text, "voice_note", perm, imp)
+                flag = " ⭐" if perm else ""
+                await wait.edit_text(
+                    f"🎤 *Eshitildi:*\n_{text}_\n\n💾 *Eslab qolindi!*{flag}"
                 )
-            ]])
+                return
 
-            await wait.edit_text(
-                f"🎤 *Eshitildi:*\n_{text}_",
-                reply_markup=save_kb
-            )
+            # Buyruq — tasdiq so'rash
+            CONFIRM_ACTIONS = {
+                "send_message", "voice_send", "add_task", "done_task",
+                "save_note", "defect_act", "work_report", "service_letter",
+                "ppr_schedule", "twin_update", "twin_maintenance",
+                "learn_add", "learn_remove", "whitelist_add"
+            }
 
-            # Javobi ham ko'rsatsin
+            INFO_ACTIONS = {
+                "weather", "currency", "kb_search", "equipment_info",
+                "safety_check", "incident", "hydraulic_calc", "pneumatic_calc",
+                "bearing_calc", "twin_predict", "contacts", "report", "memory",
+                "get_tasks", "get_notes", "learn_sources"
+            }
+
+            if action in CONFIRM_ACTIONS:
+                # Buyruq topildi — tasdiq so'ra
+                label, desc = _voice_action_label(action, data)
+                payload = json.dumps({"action": action, "data": data,
+                                      "text": text}, ensure_ascii=False)[:512]
+                confirm_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="✅ Bajar",
+                        callback_data=f"vcmd_yes|{payload}"
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Kerak emas",
+                        callback_data="vcmd_no"
+                    )
+                ]])
+                await wait.edit_text(
+                    f"🎤 *Eshitildi:*\n_{text}_\n\n"
+                    f"🔍 *Aniqlangan buyruq:* {label}\n"
+                    f"📋 {desc}\n\n"
+                    f"_Bajarayinmi?_",
+                    reply_markup=confirm_kb
+                )
+
+            elif action in INFO_ACTIONS or action == "chat":
+                # Ma'lumot so'rov — tasdiqlashsiz bajar
+                await wait.edit_text(f"🎤 *Eshitildi:*\n_{text}_\n\n⏳ _Ishlanmoqda..._")
+                resp = await process_text(
+                    text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin
+                )
+                await wait.edit_text(f"🎤 *Eshitildi:*\n_{text}_")
+                await msg.answer(resp)
+
+            else:
+                # Noma'lum — inline keyboard bilan so'ra
+                save_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="💾 Eslab qol",
+                        callback_data=f"voice_save|{text[:200]}"
+                    ),
+                    InlineKeyboardButton(
+                        text="✖️ Kerak emas",
+                        callback_data="voice_skip"
+                    )
+                ]])
+                await wait.edit_text(
+                    f"🎤 *Eshitildi:*\n_{text}_",
+                    reply_markup=save_kb
+                )
+
+        except Exception as e:
+            log.error(f"Voice handler xatosi: {e}")
+            await wait.edit_text(f"❌ Xatolik: {e}")
+
+    # ── Buyruq tasdiqlandi ────────────────────────────────────
+    @dp.callback_query(F.data.startswith("vcmd_yes|"))
+    async def cb_voice_confirm(call: CallbackQuery):
+        await call.answer("✅ Bajarilmoqda...")
+        try:
+            payload_str = call.data.split("|", 1)[1]
+            payload = json.loads(payload_str)
+            action  = payload["action"]
+            data    = payload["data"]
+            text    = payload.get("text", "")
+
             resp = await process_text(
                 text, db, ai, userbot, owner_id, tts, mech, vis, kb, digit_twin, personal_twin
             )
-            await msg.answer(resp)
-            await db.save_message(msg.from_user.id, "in", text, "voice")
-
+            await call.message.edit_text(
+                call.message.text.split("\n\n_Bajarayinmi?_")[0] +
+                f"\n\n✅ *Bajarildi!*"
+            )
+            await call.message.answer(resp)
         except Exception as e:
-            await wait.edit_text(f"❌ Xatolik: {e}")
+            await call.message.answer(f"❌ Xatolik: {e}")
 
+    @dp.callback_query(F.data == "vcmd_no")
+    async def cb_voice_cancel(call: CallbackQuery):
+        await call.answer("❌ Bekor qilindi")
+        await call.message.edit_text(
+            call.message.text.split("\n\n🔍")[0] +
+            "\n\n_❌ Buyruq bekor qilindi_"
+        )
+
+    # ── Ovoz — eslab qolish callbacklari ─────────────────────
     @dp.callback_query(F.data.startswith("voice_save|"))
     async def cb_voice_save(call: CallbackQuery):
         content = call.data.split("|", 1)[1]
@@ -356,7 +500,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         perm = imp >= 0.6
         await db.add_note(content, is_pinned=perm)
         await db.save_memory(content, "voice_note", perm, imp)
-        flag = " ⭐ _Muhim sifatida saqlandi_" if perm else ""
+        flag = " ⭐" if perm else ""
         await call.message.edit_text(
             f"💾 *Eslab qolindi!*{flag}\n\n_{content}_"
         )

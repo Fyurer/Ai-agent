@@ -14,7 +14,7 @@ from groq import Groq
 log = logging.getLogger(__name__)
 
 DB_PATH    = os.getenv("DB_PATH", "ai_agent.db")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 OWNER_NAME = os.getenv("OWNER_NAME", "O'tkirbek")
 OWNER_JOB  = os.getenv("OWNER_JOB", "AGMK 3-MBF mexanigi")
 OWNER_CITY = os.getenv("OWNER_CITY", "Olmaliq")

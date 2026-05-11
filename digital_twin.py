@@ -13,7 +13,7 @@ from groq import Groq
 
 log = logging.getLogger(__name__)
 DB_PATH    = os.getenv("DB_PATH", "ai_agent.db")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ── MBF-3 Uskuna ro'yxati ─────────────────────────────────────
 MBF3_EQUIPMENT_REGISTRY = {
@@ -78,7 +78,7 @@ class DigitalTwin:
                     work_type    TEXT,
                     description  TEXT,
                     parts_used   TEXT,
-                    performed_by TEXT DEFAULT 'O'\''tkirbek',
+                    performed_by TEXT DEFAULT 'mexanik',
                     duration_h   REAL,
                     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );

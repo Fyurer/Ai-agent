@@ -11,7 +11,7 @@ from groq import Groq
 
 log = logging.getLogger(__name__)
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 MECHANIC_SYSTEM_PROMPT = """Sen Olmaliq kon-metallurgiya kombinati 3-mis boyitish fabrikasidagi
 mexanik O'tkirbek ning AI yordamchisisan. 

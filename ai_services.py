@@ -9,7 +9,7 @@ from groq import Groq
 
 log = logging.getLogger(__name__)
 
-GROQ_MODEL       = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL       = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
 OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"

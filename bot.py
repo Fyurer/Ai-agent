@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-AI Agent Bot v4.0 — AGMK 3-MBF Mexanik Õtkirbek
+AI Agent Bot v4.1 — AGMK 3-MBF Mexanik Õtkirbek
 OpenRouter + Groq + Railway
++ Self-Evolution Engine (o'z-o'zini kuchaytirish)
 """
 
 import asyncio
@@ -21,6 +22,13 @@ from database    import Database
 from userbot     import UserBot
 from ai_services import AIServices
 from handlers    import register_handlers
+
+# Self-Evolution Engine
+try:
+    from evolution_handlers import register_evolution_handlers
+    EVOLUTION_ENABLED = True
+except ImportError:
+    EVOLUTION_ENABLED = False
 
 try:
     from personal_twin import PersonalTwin
@@ -58,63 +66,51 @@ def check_env():
         if not v:
             log.warning(f"⚠️ {k} yo'q!")
     or_key = os.getenv("OPENROUTER_API_KEY", "")
-    log.info(f"  {'✅' if or_key else '❌'} OpenRouter API: {'sozlangan' if or_key else 'YOQ — PDF/rasm/tarjima ishlamaydi'}")
+    log.info(f"  {'✅' if or_key else '❌'} OpenRouter API: {'sozlangan' if or_key else 'YOQ'}")
     log.info(f"  {'✅' if os.getenv('TG_SESSION_STRING') else '⚠️'} UserBot session")
     log.info(f"  {'✅' if os.getenv('WEATHER_API_KEY') else '—'} Ob-havo API")
+    log.info(f"  {'✅' if EVOLUTION_ENABLED else '—'} Self-Evolution Engine")
+    log.info(f"  {'✅' if os.getenv('GIT_AUTO_COMMIT','false')=='true' else '—'} Git auto-commit")
 
 
 # ── Kunlik Briefing ────────────────────────────────────────────
 async def send_daily_briefing(bot: Bot, db: Database, ai: AIServices):
-    """Har kuni ertalab soat 7:00 da briefing yuborish"""
     while True:
         now = datetime.now()
-        # Ertalab 7:00 da ishlaydi
         if now.hour == 7 and now.minute == 0:
             try:
-                # Bugungi vazifalar
-                tasks   = await db.get_tasks("pending")
-                pending = len(tasks)
-                urgent  = [t for t in tasks if t["due"] and t["due"][:10] == now.strftime("%Y-%m-%d")]
-
-                # Eslatmalar
+                tasks     = await db.get_tasks("pending")
+                pending   = len(tasks)
+                urgent    = [t for t in tasks if t["due"] and t["due"][:10] == now.strftime("%Y-%m-%d")]
                 reminders = await db.get_pending_reminders()
 
                 briefing = (
                     f"☀️ *Xayrli tong, {OWNER_NAME}!*\n"
                     f"📅 _{now.strftime('%d %B %Y, %A')}_\n\n"
                 )
-
                 if urgent:
                     briefing += f"🔴 *Bugun muddati tugaydigan vazifalar:*\n"
                     for t in urgent[:3]:
                         briefing += f"  • {t['title']}\n"
                     briefing += "\n"
-
                 if pending:
                     briefing += f"📋 Jami faol vazifalar: *{pending}* ta\n"
-
                 if reminders:
                     briefing += f"\n🔔 *Eslatmalar ({len(reminders)} ta):*\n"
                     for r in reminders[:3]:
                         short = r["text"][:60] + ("..." if len(r["text"]) > 60 else "")
                         briefing += f"  • _{short}_\n"
-
                 briefing += f"\n💡 Samarali ish kuni tilayman! /help — buyruqlar"
-
                 await bot.send_message(OWNER_ID, briefing)
                 log.info("✅ Kunlik briefing yuborildi")
-
-                # Bir marta yuborish uchun 61 soniya kutish
                 await asyncio.sleep(61)
             except Exception as e:
                 log.error(f"Briefing xatosi: {e}")
-
         await asyncio.sleep(30)
 
 
 # ── Eslatma tekshiruvi ─────────────────────────────────────────
 async def check_task_reminders(bot: Bot, db: Database):
-    """Har 10 daqiqada vazifa muddatlarini tekshirish"""
     while True:
         try:
             reminders = await db.get_upcoming_reminders()
@@ -126,14 +122,13 @@ async def check_task_reminders(bot: Bot, db: Database):
                 await db.mark_reminder_sent(r["id"])
         except Exception as e:
             log.error(f"Reminder check xatosi: {e}")
-        await asyncio.sleep(600)  # 10 daqiqa
+        await asyncio.sleep(600)
 
 
 async def auto_learn_loop(learner):
-    """Har LEARN_INTERVAL_H soatda manbalarni sinxronlashtirish"""
     import os
     interval_h = int(os.getenv("LEARN_INTERVAL_H", "24"))
-    await asyncio.sleep(60)  # Botni ishga tushirishdan keyin 1 daqiqa kutish
+    await asyncio.sleep(60)
     while True:
         try:
             res = await learner.sync_all()
@@ -145,7 +140,7 @@ async def auto_learn_loop(learner):
 
 
 async def main():
-    log.info("🚀 AI Agent v4.0 (AGMK MBF-3) ishga tushmoqda...")
+    log.info("🚀 AI Agent v4.1 (AGMK MBF-3 + Self-Evolution) ishga tushmoqda...")
     check_env()
 
     db = Database()
@@ -160,7 +155,7 @@ async def main():
 
     learner = None
     if AutoLearner:
-        learner = AutoLearner(kb=None)   # kb handlers ichida o'rnatiladi
+        learner = AutoLearner(kb=None)
         await learner.init_db()
         log.info("✅ AutoLearner tayyor")
 
@@ -176,6 +171,11 @@ async def main():
 
     dp = Dispatcher()
     register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin, learner=learner)
+
+    # Self-Evolution Engine handlerlarini qo'shish
+    if EVOLUTION_ENABLED:
+        register_evolution_handlers(dp, OWNER_ID)
+        log.info("🧬 Self-Evolution Engine ulandi!")
 
     log.info("🤖 Bot ishga tushdi! AGMK 3-MBF mexanik AI yordamchisi tayyor 🏭")
 

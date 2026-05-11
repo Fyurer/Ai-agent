@@ -172,7 +172,7 @@ async def main():
     )
 
     userbot = UserBot(TG_API_ID, TG_API_HASH, TG_PHONE)
-    await userbot.start(bot_instance=bot)
+    await userbot.start(bot_instance=bot, personal_twin=twin)
 
     dp = Dispatcher()
     register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin, learner=learner)

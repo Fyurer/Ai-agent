@@ -123,7 +123,9 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`/autopilot_whitelist` — faqat ruxsatlilarga\n"
             "`/autopilot_off` — o'chirish\n"
             "`/autopilot_pause 60` — 60 daqiqa to'xtatish\n"
-            "`/autopilot_status` — holat\n\n"
+            "`/autopilot_status` — holat\n"
+            "`/autopilot_history 10` — oxirgi suhbatlar (savol+javob)\n"
+            "`/autopilot_stats` — statistika\n\n"
             "🔧 *TEXNIK YORDAM:*\n"
             "`Nasos ishlamayapti` / `Kompressor muammo`\n"
             "`Elektr ishi xavfsizligi` / `Yong'in chiqdi`\n"
@@ -225,6 +227,51 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             await msg.answer("\n".join(lines))
         else:
             await msg.answer("❌ AutoReply moduli ulanmagan.")
+
+    @dp.message(Command("autopilot_history"))
+    async def cmd_ap_history(msg: Message):
+        if not is_owner(msg): return
+        if not userbot.auto_reply:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+            return
+        args  = msg.text.split()
+        limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 10
+        rows  = await userbot.auto_reply.get_chat_history(limit)
+        if not rows:
+            await msg.answer("📭 Hali hech qanday suhbat yo'q.")
+            return
+        lines = [f"📋 *AutoPilot — oxirgi {len(rows)} ta suhbat:*\n"]
+        for name, uname, question, reply, created_at in rows:
+            ustr   = f" (@{uname})" if uname else ""
+            dt     = created_at[:16] if created_at else "?"
+            lines.append(
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 *{name}*{ustr} | 🕐 {dt}\n"
+                f"❓ _{question[:150]}_\n"
+                f"✅ _{reply[:150]}_"
+            )
+        # Xabar uzun bo'lsa bo'laklarga bo'lib yuborish
+        full = "\n".join(lines)
+        if len(full) <= 4000:
+            await msg.answer(full)
+        else:
+            chunk = ""
+            for line in lines:
+                if len(chunk) + len(line) > 3800:
+                    await msg.answer(chunk)
+                    chunk = ""
+                chunk += line + "\n"
+            if chunk:
+                await msg.answer(chunk)
+
+    @dp.message(Command("autopilot_stats"))
+    async def cmd_ap_stats(msg: Message):
+        if not is_owner(msg): return
+        if not userbot.auto_reply:
+            await msg.answer("❌ AutoReply moduli ulanmagan.")
+            return
+        stats = await userbot.auto_reply.get_chat_stats()
+        await msg.answer(stats)
 
     # ── Standart buyruqlar ───────────────────────────────────
     @dp.message(Command("tasks"))

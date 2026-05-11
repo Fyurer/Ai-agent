@@ -1,5 +1,5 @@
 """
-Handlers v3.0 — O'tkirbek AI Agent
+Handlers v3.0 — Õtkirbek AI Agent
 Barcha funksiyalar: Vizual Defektoskopiya, HSE Audit, Sensor Tahlili,
 Digital Twin, Knowledge Base RAG, AutoPilot, AutoReply boshqaruvi
 """
@@ -18,13 +18,14 @@ from mechanic_service import MechanicService
 from vision_service   import VisionService
 from knowledge_base   import KnowledgeBase
 from digital_twin     import DigitalTwin
+from auto_learner     import AutoLearner
 
 log        = logging.getLogger(__name__)
-OWNER_NAME = os.getenv("OWNER_NAME", "O'tkirbek")
+OWNER_NAME = os.getenv("OWNER_NAME", "Õtkirbek")
 
 
 def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
-                      userbot: UserBot, owner_id: int, twin=None):
+                      userbot: UserBot, owner_id: int, twin=None, learner=None):
 
     tts        = TTSService()
     mech       = MechanicService()
@@ -34,6 +35,15 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
 
     # PersonalTwin — Raqamli Egizak
     personal_twin = twin
+
+    # AutoLearner
+    auto_learner = learner
+    if auto_learner is None:
+        try:
+            auto_learner = AutoLearner(kb=kb)
+        except Exception as _ale:
+            auto_learner = None
+            log.warning(f'AutoLearner init xatosi: {_ale}')
     if personal_twin is None:
         try:
             from personal_twin import PersonalTwin as PT
@@ -161,7 +171,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         if userbot.auto_reply:
             userbot.auto_reply.enable()
             userbot.auto_reply.set_mode("on")
-            await msg.answer("🟢 *AutoPilot YONDIRILDI*\n_Barcha xabarlarga O'tkirbek nomidan javob beriladi_")
+            await msg.answer("🟢 *AutoPilot YONDIRILDI*\n_Barcha xabarlarga Õtkirbek nomidan javob beriladi_")
         else:
             await msg.answer("❌ AutoReply moduli ulanmagan.")
 
@@ -260,6 +270,39 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         for v in voices[:10]:
             lines.append(f"• `{v['voice_id']}` — {v['name']}")
         await msg.answer("\n".join(lines))
+
+    # ════════════════════════════════════════════════════════
+    #  AUTOLEARNER BUYRUQLARI
+    # ════════════════════════════════════════════════════════
+
+    @dp.message(Command("learn_sources"))
+    async def cmd_learn_sources(msg: Message):
+        if not is_owner(msg): return
+        if not auto_learner:
+            await msg.answer("❌ AutoLearner yuklanmagan.")
+            return
+        await msg.answer(await auto_learner.get_stats())
+
+    @dp.message(Command("learn_sync"))
+    async def cmd_learn_sync(msg: Message):
+        if not is_owner(msg): return
+        if not auto_learner:
+            await msg.answer("❌ AutoLearner yuklanmagan.")
+            return
+        wait = await msg.answer("🔄 _Sinxronlanmoqda..._")
+        res  = await auto_learner.sync_all(force=True)
+        txt  = (
+            f"✅ *AutoLearner natija:*\n\n"
+            f"📦 Tekshirildi: {res['total']} ta\n"
+            f"📄 Qo\'shildi: {res['added']} ta\n"
+            f"❌ Xato: {res['errors']} ta"
+        )
+        if res["details"]:
+            txt += "\n\n*Tafsilot:*"
+            for d in res["details"]:
+                icon = "✅" if d["ok"] else "❌"
+                txt += f"\n{icon} {d['label']}: {d.get('added',0)} ta"
+        await wait.edit_text(txt)
 
     # ════════════════════════════════════════════════════════
     #  MEDIA HANDLERLAR
@@ -544,6 +587,17 @@ def quick_intent(text: str) -> tuple:
     if '/report' in tl: return ("report", {})
     if '/memory' in tl or 'xotira holati' in tl: return ("memory", {})
 
+    # AutoLearner — manba qo'shish
+    m = re.match(r'^manba\s+qosh[\s:]+([a-z]+)\s+(https?://\S+)(?:\s+(\S+))?', tl)
+    if m:
+        return ("learn_add", {"type": m.group(1), "url": m.group(2),
+                               "category": m.group(3) or "auto"})
+
+    # AutoLearner — manba o'chirish
+    m = re.match(r'^manba\s+(?:ochir|del|remove)[\s:]+(\d+)', tl)
+    if m:
+        return ("learn_remove", {"source_id": int(m.group(1))})
+
     return (None, {})
 
 
@@ -678,17 +732,69 @@ async def process_text(text: str, db: Database, ai: AIServices,
     elif action == "service_letter":
         return mech.build_service_letter(parse_doc_params(data.get("raw",""),"letter"))
 
+    elif action == "learn_add":
+        if not auto_learner:
+            return "❌ AutoLearner yuklanmagan."
+        res = await auto_learner.add_source(
+            data.get("type","web"), data.get("url",""), data.get("category","auto")
+        )
+        if res["ok"]:
+            return (f"✅ *Manba qo\'shildi!*\n\n"
+                    f"🔗 {res['type'].upper()}: {res['url']}\n"
+                    f"📂 Kategoriya: {res['category']}\n\n"
+                    f"`/learn_sync` — hozir sinxronlash")
+        return f"❌ Xato: {res['error']}"
+
+    elif action == "learn_remove":
+        if not auto_learner:
+            return "❌ AutoLearner yuklanmagan."
+        sid = data.get("source_id")
+        if sid:
+            await auto_learner.remove_source(sid)
+            return f"✅ Manba #{sid} o\'chirildi."
+        return "❓ Manba ID kerak."
+
+    elif action == "learn_sync":
+        if not auto_learner:
+            return "❌ AutoLearner yuklanmagan."
+        res = await auto_learner.sync_all(force=True)
+        return (f"✅ Sinxronlandi: {res['added']} ta qo\'shildi, "
+                f"{res['errors']} ta xato.")
+
     elif action == "ppr_schedule":
         return await mech.generate_ppr_schedule(data.get("equipment",["nasos"]))
 
     else:
-        # ── RAG + AI suhbat ─────────────────────────────────
-        # Avval KB dan qidirish
-        kb_answer = await kb.answer_with_rag(text)
-        if kb_answer:
-            return kb_answer
+        # ── AQLLI JAVOB TIZIMI ───────────────────────────────
+        # 1. Avval AI chat bilan javob berish (asosiy)
+        memories = await db.get_relevant_memories(text)
+        context  = "\n".join(f"• {m}" for m in memories) if memories else ""
+        history  = await db.get_conversation_history()
+        ai_answer = await ai.chat(text, history, context)
 
-        # PersonalTwin bilan javob — faqat tayyor bo'lganda (>=10 namuna)
+        # 2. Agar AI javobi yetarli bo'lmasa — KB dan qo'shimcha ma'lumot qo'sh
+        #    (faqat texnik kalit so'zlar bo'lsa)
+        TECH_KEYWORDS = [
+            'nasos','kompressor','tegirmon','flotatsiya','konveyer',
+            'warman','gmd','npsh','kaviatsiya','muhr','liner','reagent',
+            'ksantogenat','gost','vfd','podshipnik','impeller','vibrats',
+            'trunnion','stator','rotor','ppr','texnik','nosozlik',
+            'parametr','standart','moy','yog\'','hisob'
+        ]
+        tl = text.lower()
+        is_technical = any(kw in tl for kw in TECH_KEYWORDS)
+
+        if is_technical:
+            kb_context = await kb.get_rag_context(text)
+            if kb_context:
+                # KB ma'lumoti bor — AI ga qayta yubor, kontekst bilan
+                enhanced = await ai.chat(
+                    text, history,
+                    context + ("\n\n📚 Texnik bilim bazasi:\n" + kb_context if kb_context else "")
+                )
+                return enhanced
+
+        # 3. PersonalTwin — tayyor bo'lganda
         if personal_twin:
             try:
                 stats = await personal_twin.get_stats()
@@ -699,11 +805,7 @@ async def process_text(text: str, db: Database, ai: AIServices,
             except Exception as _pt_err:
                 log.warning(f"PersonalTwin xatosi: {_pt_err}")
 
-        # Oddiy AI chat (fallback)
-        memories = await db.get_relevant_memories(text)
-        context  = "\n".join(f"• {m}" for m in memories) if memories else ""
-        history  = await db.get_conversation_history()
-        return await ai.chat(text, history, context)
+        return ai_answer
 
 
 # ════════════════════════════════════════════════════════════

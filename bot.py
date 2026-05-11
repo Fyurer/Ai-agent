@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Agent Bot v4.0 — AGMK 3-MBF Mexanik O'tkirbek
+AI Agent Bot v4.0 — AGMK 3-MBF Mexanik Õtkirbek
 OpenRouter + Groq + Railway
 """
 
@@ -27,6 +27,11 @@ try:
 except ImportError:
     PersonalTwin = None
 
+try:
+    from auto_learner import AutoLearner
+except ImportError:
+    AutoLearner = None
+
 log_handlers = [logging.StreamHandler(sys.stdout)]
 try:
     log_handlers.append(logging.FileHandler("bot.log", encoding="utf-8"))
@@ -45,7 +50,7 @@ OWNER_ID    = int(os.getenv("OWNER_CHAT_ID", "0"))
 TG_API_ID   = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
 TG_PHONE    = os.getenv("TG_PHONE", "")
-OWNER_NAME  = os.getenv("OWNER_NAME", "O'tkirbek")
+OWNER_NAME  = os.getenv("OWNER_NAME", "Õtkirbek")
 
 
 def check_env():
@@ -124,6 +129,21 @@ async def check_task_reminders(bot: Bot, db: Database):
         await asyncio.sleep(600)  # 10 daqiqa
 
 
+async def auto_learn_loop(learner):
+    """Har LEARN_INTERVAL_H soatda manbalarni sinxronlashtirish"""
+    import os
+    interval_h = int(os.getenv("LEARN_INTERVAL_H", "24"))
+    await asyncio.sleep(60)  # Botni ishga tushirishdan keyin 1 daqiqa kutish
+    while True:
+        try:
+            res = await learner.sync_all()
+            if res["added"] > 0:
+                log.info(f"✅ AutoLearner: {res['added']} ta yangi bilim qo'shildi")
+        except Exception as e:
+            log.error(f"AutoLearner loop xatosi: {e}")
+        await asyncio.sleep(interval_h * 3600)
+
+
 async def main():
     log.info("🚀 AI Agent v4.0 (AGMK MBF-3) ishga tushmoqda...")
     check_env()
@@ -138,6 +158,12 @@ async def main():
         await twin.init_db()
         log.info("✅ PersonalTwin tayyor")
 
+    learner = None
+    if AutoLearner:
+        learner = AutoLearner(kb=None)   # kb handlers ichida o'rnatiladi
+        await learner.init_db()
+        log.info("✅ AutoLearner tayyor")
+
     ai = AIServices()
 
     bot = Bot(
@@ -149,13 +175,15 @@ async def main():
     await userbot.start(bot_instance=bot)
 
     dp = Dispatcher()
-    register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin)
+    register_handlers(dp, db, ai, userbot, OWNER_ID, twin=twin, learner=learner)
 
     log.info("🤖 Bot ishga tushdi! AGMK 3-MBF mexanik AI yordamchisi tayyor 🏭")
 
     # Fon vazifalari
     asyncio.create_task(send_daily_briefing(bot, db, ai))
     asyncio.create_task(check_task_reminders(bot, db))
+    if learner:
+        asyncio.create_task(auto_learn_loop(learner))
 
     try:
         await dp.start_polling(

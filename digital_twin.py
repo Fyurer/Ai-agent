@@ -44,7 +44,8 @@ class DigitalTwin:
     """MBF-3 uskunalarining raqamli egizagi"""
 
     def __init__(self):
-        self.groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        api_key = os.getenv("GROQ_API_KEY", "")
+        self.groq = Groq(api_key=api_key) if api_key else None
 
     async def init(self, db_conn=None):
         """Jadvallarni yaratish"""
@@ -78,7 +79,7 @@ class DigitalTwin:
                     work_type    TEXT,
                     description  TEXT,
                     parts_used   TEXT,
-                    performed_by TEXT DEFAULT 'mexanik',
+                    performed_by TEXT DEFAULT 'O'\''tkirbek',
                     duration_h   REAL,
                     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );

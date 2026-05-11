@@ -296,10 +296,13 @@ class MechanicService:
     """Mexanik uchun barcha maxsus funksiyalar"""
 
     def __init__(self):
-        self.groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        api_key = os.getenv("GROQ_API_KEY", "")
+        self.groq = Groq(api_key=api_key) if api_key else None
 
     async def analyze_technical(self, query: str, image_bytes: bytes = None) -> str:
         """Texnik savol — Groq orqali mexanik kontekstda javob"""
+        if not self.groq:
+            return "❌ GROQ_API_KEY sozlanmagan. Railway Variables ga qo'shing."
         try:
             messages = [
                 {"role": "system", "content": MECHANIC_SYSTEM_PROMPT},

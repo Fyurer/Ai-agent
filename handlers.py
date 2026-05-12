@@ -119,6 +119,15 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`Holat: nasos_1, vib=3.2, temp=65` → yangilash\n"
             "`Prognoz: nasos_1` → AI prognoz\n"
             "`Tamirlash: nasos_1, turi=TO-2, ish=muhrlar almashtirildi`\n\n"
+            "📋 *VAZIFALAR:*\n"
+            "`/tasks` — ro'yxat (rangli vaqt: 🔴🟠🟡⚪)\n"
+            "`/task_add Sarlavha, soat 14:30` — soat bilan\n"
+            "`/task_add Sarlavha, ertaga 09:00` — ertaga\n"
+            "`/task_add Sarlavha, 25.07.2025 10:00` — aniq sana\n"
+            "`/task_add Sarlavha, 2 soatdan keyin`\n"
+            "`Vazifa <N> bajarildi` — yopish\n"
+            "_⏰ Eslatma har 30 soniyada tekshiriladi_\n"
+            "_📅 Briefing: har kuni 12:00 Toshkent vaqtida_\n\n"
             "📚 *BILIM BAZASI:*\n"
             "`KB: warman nasos kaviatsiya` → qidiruv\n"
             "`/kb` — kategoriyalar\n"
@@ -137,7 +146,7 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`Defekt akti:` / `Ish hisoboti:` / `PPR jadvali:`\n\n"
             "🎤 *OVOZLI XABAR:*\n"
             "`Azizga ovozli yoz: 15 daqiqa kechikaman`\n\n"
-            "/tasks /notes /report /memory /cleanup /voices"
+            "/notes /report /memory /cleanup /voices"
         )
 
     # ── Digital Twin ─────────────────────────────────────────
@@ -237,10 +246,272 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         if not is_owner(msg): return
         await msg.answer(await get_tasks_text(db))
 
+    @dp.message(Command("task_add"))
+    async def cmd_task_add(msg: Message):
+        """
+        /task_add Nasosni tekshirish, soat 14:30
+        /task_add Hisobot yozish, ertaga 09:00
+        /task_add Yig'ilish, 25.07.2025 10:00
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await msg.answer(
+                "📋 *Vazifa qo'shish formati:*\n\n"
+                "`/task_add Sarlavha, soat 14:30`\n"
+                "`/task_add Sarlavha, ertaga 09:00`\n"
+                "`/task_add Sarlavha, 25.07.2025 10:00`\n"
+                "`/task_add Sarlavha, 2 soatdan keyin`\n"
+                "`/task_add Sarlavha` ← vaqtsiz"
+            )
+            return
+        raw  = parts[1].strip()
+        # Vergul bilan ajratilgan vaqt
+        if "," in raw:
+            idx  = raw.index(",")
+            title = raw[:idx].strip()
+            due   = raw[idx+1:].strip()
+        else:
+            title = raw
+            due   = None
+        result = await action_add_task({"content": title, "deadline": due}, db)
+        await msg.answer(result)
+
     @dp.message(Command("notes"))
     async def cmd_notes(msg: Message):
         if not is_owner(msg): return
         await msg.answer(await get_notes_text(db))
+
+    # ── Ehtiyot qismlar kalkulyatori ─────────────────────────
+    @dp.message(Command("spare_parts"))
+    async def cmd_spare_parts(msg: Message):
+        """
+        /spare_parts nasos 5000
+        /spare_parts kompressor 2000 og'ir
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=3)
+        if len(parts) < 3:
+            await msg.answer(
+                "🔩 *Ehtiyot qismlar kalkulyatori*\n\n"
+                "Format: `/spare_parts <uskuna> <ish_soati> [intensivlik]`\n\n"
+                "Misol:\n"
+                "`/spare_parts nasos 5000`\n"
+                "`/spare_parts kompressor 2000 og'ir`\n"
+                "`/spare_parts tegirmon 8000 yumshoq`\n\n"
+                "_Intensivlik: yumshoq | o'rtacha | og'ir_"
+            )
+            return
+        equip     = parts[1]
+        runtime   = float(parts[2]) if parts[2].isdigit() else 0
+        intensity = parts[3] if len(parts) > 3 else "o'rtacha"
+        result    = mech.spare_parts_calc(equip, runtime, intensity)
+        await msg.answer(result)
+
+    # ── Zayavka generatori ───────────────────────────────────
+    @dp.message(Command("zayavka"))
+    async def cmd_zayavka(msg: Message):
+        """
+        /zayavka nasosga 3 ta salnk kerak
+        /zayavka Warman nasos: 2 dona impeller
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await msg.answer(
+                "📋 *Zayavka generatori*\n\n"
+                "Format: `/zayavka <tavsif>`\n\n"
+                "Misol:\n"
+                "`/zayavka nasosga 3 ta salnk kerak`\n"
+                "`/zayavka kompressor filtri 2 dona, TO-500`\n"
+                "`/zayavka Warman 6/4 uchun 1 impeller`"
+            )
+            return
+        desc   = parts[1]
+        # Uskuna nomini ajratish
+        eq_m   = re.search(r'(nasos|kompressor|tegirmon|konveyer|flotatsiya|warman|[\w]+)\s+(?:uchun|ga|da)', desc, re.I)
+        eq     = eq_m.group(1) if eq_m else ""
+        result = mech.generate_zayavka(desc, equip_name=eq)
+        await msg.answer(result)
+
+    # ── QR-kod ─────────────────────────────────────────────
+    @dp.message(Command("qr"))
+    async def cmd_qr_lookup(msg: Message):
+        """
+        /qr nasos_1
+        /qr ID=EQ-2024-0042
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await msg.answer(
+                "📱 *QR-kod qidirish*\n\n"
+                "Format: `/qr <qr_matn_yoki_id>`\n\n"
+                "Misol:\n"
+                "`/qr nasos_1`\n"
+                "`/qr ID=EQ-2024-0042`\n\n"
+                "_Yoki telefonda QR skanerlangan matnni yuboring_"
+            )
+            return
+        qr_data = parts[1].strip()
+        # Digital Twin dan tarix olish
+        try:
+            history = await digit_twin.get_maintenance_history(qr_data)
+        except Exception:
+            history = None
+        result = mech.lookup_equipment_by_qr(qr_data, db_records=history)
+        await msg.answer(result)
+
+    # ── Avariya simulyatori ──────────────────────────────────
+    @dp.message(Command("avaria"))
+    async def cmd_avaria(msg: Message):
+        """
+        /avaria tegirmonning moylanish tizimi ishdan chiqsa
+        /avaria flotatsiya kompressori to'xtasa
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await msg.answer(
+                "🚨 *Avariya ssenariysi simulyatori*\n\n"
+                "Format: `/avaria <stsenariy>`\n\n"
+                "Misol:\n"
+                "`/avaria tegirmonning moylanish tizimi ishdan chiqsa`\n"
+                "`/avaria flotatsiya nasosi to'xtasa`\n"
+                "`/avaria konveyer lentasi uzilsa`"
+            )
+            return
+        scenario = parts[1].strip()
+        wait     = await msg.answer("⚙️ _Stsenariy tahlil qilinmoqda..._")
+        result   = await mech.simulate_accident(scenario)
+        await wait.edit_text(result[:4000])
+
+    # ── Texnik tarjima ───────────────────────────────────────
+    @dp.message(Command("tarjima"))
+    @dp.message(Command("translate"))
+    async def cmd_translate(msg: Message):
+        """
+        /tarjima [matn] — ingliz/rus → o'zbek
+        /tarjima ru [matn] — ingliz → rus
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await msg.answer(
+                "🌐 *Texnik tarjima*\n\n"
+                "Format: `/tarjima <matn>`\n\n"
+                "Misol:\n"
+                "`/tarjima The pump shaft seal is worn`\n"
+                "`/tarjima ru Replace the bearing assembly`\n\n"
+                "_ABB, Metso, Warman, Sulzer hujjatlari uchun_"
+            )
+            return
+        text = parts[1].strip()
+
+        # Tilni aniqlash
+        target = "uzbek"
+        if text.lower().startswith("ru "):
+            target = "russian"
+            text   = text[3:].strip()
+
+        # Ishlab chiqaruvchini aniqlash
+        mfr = ""
+        for brand in ["ABB", "Metso", "Warman", "Sulzer", "SKF", "Siemens", "Flender"]:
+            if brand.lower() in text.lower():
+                mfr = brand
+                break
+
+        wait   = await msg.answer("🌐 _Tarjima qilinmoqda..._")
+        result = await mech.translate_technical(text, target_lang=target, manufacturer=mfr)
+        await wait.edit_text(result[:4000])
+
+    # ── Trend tahlili ────────────────────────────────────────
+    @dp.message(Command("trend"))
+    async def cmd_trend(msg: Message):
+        """
+        /trend nasos_1 vibration 2.1,2.4,2.8,3.1,3.5
+        /trend tegirmon_1 temperature 65,68,71,74,78
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split()
+        if len(parts) < 4:
+            await msg.answer(
+                "📊 *Trend tahlili*\n\n"
+                "Format: `/trend <id> <parametr> <qiymatlar>`\n\n"
+                "Misol:\n"
+                "`/trend nasos_1 vibration 2.1,2.4,2.8,3.1,3.5`\n"
+                "`/trend tegirmon temperature 65,68,71,74,78`\n"
+                "`/trend kompressor pressure 6.5,6.3,6.0,5.8,5.5`\n\n"
+                "_Parametrlar: vibration | temperature | pressure | current_"
+            )
+            return
+        equip_id  = parts[1]
+        param     = parts[2].lower()
+        try:
+            vals  = [float(x) for x in parts[3].split(",")]
+            now_ts = datetime.now().timestamp()
+            data   = [(now_ts - (len(vals)-i-1)*3600, v) for i, v in enumerate(vals)]
+        except ValueError:
+            await msg.answer("❌ Qiymatlar vergul bilan: `2.1,2.4,2.8`")
+            return
+        result = mech.analyze_trend(equip_id, param, data)
+        await msg.answer(result)
+
+    # ── Energiya monitoringi ─────────────────────────────────
+    @dp.message(Command("energy"))
+    async def cmd_energy(msg: Message):
+        """
+        /energy nasos_1 nasos 82.5
+        /energy tegirmon_1 tegirmon 520 24
+        """
+        if not is_owner(msg): return
+        parts = msg.text.split()
+        if len(parts) < 4:
+            await msg.answer(
+                "⚡ *Energiya sarfi monitoringi*\n\n"
+                "Format: `/energy <id> <tur> <kw> [soat]`\n\n"
+                "Misol:\n"
+                "`/energy nasos_1 nasos 82.5`\n"
+                "`/energy tegirmon_1 tegirmon 520 8`\n"
+                "`/energy kompressor_1 kompressor 58 24`"
+            )
+            return
+        equip_id = parts[1]
+        eq_type  = parts[2]
+        try:
+            kw      = float(parts[3])
+            runtime = float(parts[4]) if len(parts) > 4 else 24
+        except ValueError:
+            await msg.answer("❌ kW qiymati son bo'lishi kerak")
+            return
+        result = mech.energy_monitor(equip_id, eq_type, kw, runtime)
+        await msg.answer(result)
+
+    # ── Samaradorlik metrikalari ─────────────────────────────
+    @dp.message(Command("metrics"))
+    async def cmd_metrics(msg: Message):
+        if not is_owner(msg): return
+        # DB dan statistika olish
+        stats_raw = await db.get_weekly_stats()
+        tasks_all = await db.get_tasks("done")
+        tasks_pnd = await db.get_tasks("pending")
+        incidents = await db.get_incidents(limit=50)
+
+        # Nosozlik turlarini guruhlash
+        failures: dict = {}
+        for inc in incidents:
+            t = inc.get("type", "Noma'lum")[:30]
+            failures[t] = failures.get(t, 0) + 1
+
+        stats = {
+            "solved":           len(tasks_all),
+            "total":            len(tasks_all) + len(tasks_pnd),
+            "avg_response_min": 45,   # taxminiy — DB da yo'q
+            "uptime_pct":       95.0, # taxminiy
+            "failures":         failures,
+        }
+        result = mech.performance_metrics(stats)
+        await msg.answer(result)
 
     @dp.message(Command("report"))
     async def cmd_report(msg: Message):
@@ -692,20 +963,50 @@ def quick_intent(text: str) -> tuple:
     m = re.match(r'^(?:eslab qol|zametka|yodda tut|saqlab qol|qeyd)[:\s]+(.+)', t, re.I)
     if m: return ("save_note", {"content": m.group(1).strip()})
 
-    # Vazifa
+    # Vazifa — vaqt va sana formatlarini to'liq qo'llab-quvvatlash
     m = re.match(r'^(?:vazifa|topshiriq|todo|task)[:\s]+(.+)', t, re.I)
     if m:
         content = m.group(1).strip()
-        due = None
-        dm = re.search(r',\s*muddat\s+(.+)$', content, re.I)
+        due     = None
+        # Vergul orqali ajratilgan muddat: "vazifa: ish, soat 14:30"
+        dm = re.search(
+            r',\s*(?:muddat|soat|ertaga|\d{1,2}[.:]\d{2}|'
+            r'\d{1,2}\.\d{1,2}\.?\d*|'
+            r'\d+\s*(?:soat|daqiqa))',
+            content, re.I
+        )
         if dm:
-            due = dm.group(1).strip()
+            due     = content[dm.start() + 1:].strip()  # verguldan keyingi qism
             content = content[:dm.start()].strip()
         return ("add_task", {"content": content, "deadline": due})
 
     # Vazifa bajarildi
     m = re.search(r'vazifa\s+(\d+)\s+bajarildi', tl)
     if m: return ("done_task", {"task_id": m.group(1)})
+
+    # Zayavka / ariza
+    m = re.match(r'^(?:zayavka|ariza|buyurtma|kerak)[:\s]+(.+)', tl)
+    if m: return ("zayavka", {"desc": m.group(1).strip()})
+
+    # Ehtiyot qismlar
+    m = re.match(r'^(?:ehtiyot|spare|resurs)[:\s]+(\w+)\s+([\d.]+)', tl)
+    if m: return ("spare_parts", {"equip": m.group(1), "runtime": float(m.group(2))})
+
+    # Avariya simulyatori
+    m = re.match(r'^(?:agar|avaria|stsenariy)[:\s]+(.+)', tl)
+    if m: return ("avaria", {"scenario": m.group(1).strip()})
+
+    # Texnik tarjima
+    m = re.match(r'^(?:tarjima|translate)[:\s]+(.+)', tl)
+    if m: return ("translate", {"text": m.group(1).strip()})
+
+    # Trend
+    m = re.match(r'^trend[:\s]+(\w+)\s+(\w+)\s+([\d.,]+)', tl)
+    if m: return ("trend", {"equip": m.group(1), "param": m.group(2), "vals": m.group(3)})
+
+    # Energiya
+    m = re.match(r'^(?:energiya|energy|quvvat)[:\s]+(\w+)\s+([\d.]+)', tl)
+    if m: return ("energy", {"equip": m.group(1), "kw": float(m.group(2))})
 
     # Valyuta
     if any(w in tl for w in ['dollar','kurs','valyuta','evro','rubl','usd','eur','rub']):
@@ -890,6 +1191,40 @@ async def process_text(text: str, db: Database, ai: AIServices,
                 f"Doimiy:{stats['permanent']} | Eskirmoqda:{stats['expiring_soon']}")
 
     # ── Mexanik funksiyalar ───────────────────────────────────
+    elif action == "zayavka":
+        desc = data.get("desc", text)
+        eq_m = re.search(r'(nasos|kompressor|tegirmon|konveyer|flotatsiya|warman)', desc, re.I)
+        eq   = eq_m.group(1) if eq_m else ""
+        return mech.generate_zayavka(desc, equip_name=eq)
+
+    elif action == "spare_parts":
+        return mech.spare_parts_calc(
+            data.get("equip", "nasos"),
+            float(data.get("runtime", 0)),
+            data.get("intensity", "o'rtacha")
+        )
+
+    elif action == "avaria":
+        return await mech.simulate_accident(data.get("scenario", text))
+
+    elif action == "translate":
+        return await mech.translate_technical(data.get("text", text))
+
+    elif action == "trend":
+        try:
+            vals  = [float(x) for x in data.get("vals", "").split(",")]
+            now_ts = datetime.now().timestamp()
+            points = [(now_ts - (len(vals)-i-1)*3600, v) for i, v in enumerate(vals)]
+            return mech.analyze_trend(data.get("equip", ""), data.get("param", "vibration"), points)
+        except Exception as e:
+            return f"❌ Trend xatosi: {e}"
+
+    elif action == "energy":
+        return mech.energy_monitor(
+            data.get("equip", ""), data.get("equip", "nasos"),
+            float(data.get("kw", 0))
+        )
+
     elif action == "equipment_info":
         return mech.get_equipment_info(data.get("equipment","nasos"))
 
@@ -1071,10 +1406,78 @@ async def action_save_note(content, db, ai):
 
 
 async def action_add_task(data, db):
-    title = data.get("content","")
-    due   = data.get("deadline")
-    tid   = await db.add_task(title, title, due)
-    return f"✅ Vazifa #{tid}:\n*{title}*" + (f"\n📅 {due}" if due else "")
+    """
+    Vazifa qo'shish. Vaqt formatlari:
+      "soat 14:30"          → bugun 14:30 Toshkent
+      "ertaga 09:00"        → ertaga 09:00
+      "25.07.2025 14:30"    → aniq sana va vaqt
+      "25.07.2025"          → faqat sana (00:00)
+      "muddat 3 soat"       → 3 soatdan keyin
+    """
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, timedelta, timezone
+    TZ = ZoneInfo("Asia/Tashkent")
+
+    title = data.get("content", "")
+    raw   = data.get("deadline", "") or ""
+    due_dt = None
+
+    if raw:
+        now = datetime.now(TZ)
+        r   = raw.strip().lower()
+
+        # "soat 14:30" yoki "14:30"
+        m = re.search(r'(?:soat\s+)?(\d{1,2}):(\d{2})', r)
+        if m:
+            h, mn = int(m.group(1)), int(m.group(2))
+            due_dt = now.replace(hour=h, minute=mn, second=0, microsecond=0)
+            if due_dt < now:   # o'tib ketgan bo'lsa — ertaga
+                due_dt += timedelta(days=1)
+
+        # "ertaga 09:00"
+        elif r.startswith("ertaga"):
+            tm = re.search(r'(\d{1,2}):(\d{2})', r)
+            base = now + timedelta(days=1)
+            if tm:
+                due_dt = base.replace(hour=int(tm.group(1)), minute=int(tm.group(2)),
+                                      second=0, microsecond=0)
+            else:
+                due_dt = base.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        # "25.07.2025 14:30" yoki "25.07 14:30"
+        elif re.match(r'\d{1,2}\.\d{1,2}', r):
+            for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y", "%d.%m %H:%M", "%d.%m"):
+                try:
+                    parsed = datetime.strptime(raw.strip()[:16], fmt)
+                    if "%Y" not in fmt:
+                        parsed = parsed.replace(year=now.year)
+                    due_dt = parsed.replace(tzinfo=TZ)
+                    break
+                except ValueError:
+                    continue
+
+        # "3 soatdan keyin" / "muddat 3 soat"
+        elif m2 := re.search(r'(\d+)\s*soat', r):
+            due_dt = now + timedelta(hours=int(m2.group(1)))
+
+        # "30 daqiqadan keyin"
+        elif m2 := re.search(r'(\d+)\s*daqiqa', r):
+            due_dt = now + timedelta(minutes=int(m2.group(1)))
+
+    due_str = due_dt.strftime("%Y-%m-%d %H:%M") if due_dt else None
+    tid     = await db.add_task(title, title, due_str)
+
+    if due_str and due_dt:
+        from zoneinfo import ZoneInfo
+        TZ2 = ZoneInfo("Asia/Tashkent")
+        fmt_show = due_dt.strftime("%d.%m.%Y %H:%M")
+        return (
+            f"✅ *Vazifa #{tid} qo'shildi!*\n\n"
+            f"📋 {title}\n"
+            f"⏰ _{fmt_show} (Toshkent)_\n\n"
+            f"_Eslatma vaqti kelganda avtomatik yuboriladi_"
+        )
+    return f"✅ *Vazifa #{tid} qo'shildi:*\n📋 {title}"
 
 
 async def action_currency(amount=None, ctype=None):
@@ -1117,12 +1520,60 @@ async def action_weather(city):
 
 
 async def get_tasks_text(db):
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    TZ = ZoneInfo("Asia/Tashkent")
+
     tasks = await db.get_tasks()
-    if not tasks: return "✅ Faol vazifalar yo'q."
+    if not tasks:
+        return (
+            "✅ *Faol vazifalar yo'q.*\n\n"
+            "_Vazifa qo'shish:_\n"
+            "`Vazifa: sarlavha, soat 14:30`\n"
+            "`Vazifa: sarlavha, 25.07.2025 09:00`"
+        )
+
+    now = datetime.now(TZ)
     lines = ["📋 *Vazifalar:*\n"]
+
     for i, t in enumerate(tasks, 1):
-        due = f" — _{t['due'][:10]}_" if t["due"] else ""
-        lines.append(f"{i}. {t['title']}{due}")
+        due_str = t.get("due", "")
+        if due_str:
+            try:
+                fmt = "%Y-%m-%d %H:%M:%S" if len(due_str) > 16 else "%Y-%m-%d %H:%M"
+                due_dt = datetime.strptime(due_str[:19], fmt).replace(tzinfo=TZ)
+                diff   = (due_dt - now).total_seconds() / 60
+
+                # Vaqt formati
+                if due_dt.date() == now.date():
+                    time_label = f"bugun {due_dt.strftime('%H:%M')}"
+                elif due_dt.date().toordinal() - now.date().toordinal() == 1:
+                    time_label = f"ertaga {due_dt.strftime('%H:%M')}"
+                else:
+                    time_label = due_dt.strftime("%d.%m %H:%M")
+
+                # Holat belgisi
+                if diff < 0:
+                    badge = "🔴"   # o'tib ketgan
+                elif diff <= 60:
+                    badge = "🟠"   # 1 soat qoldi
+                elif diff <= 1440:
+                    badge = "🟡"   # 1 kun qoldi
+                else:
+                    badge = "⚪"   # uzoq
+
+                due_display = f" {badge} _{time_label}_"
+            except ValueError:
+                due_display = f" — _{due_str[:10]}_"
+        else:
+            due_display = ""
+
+        lines.append(f"{i}. {t['title']}{due_display}")
+
+    lines.append(
+        "\n_Bajarildi:_ `Vazifa <N> bajarildi`\n"
+        "_Yangi:_ `Vazifa: sarlavha, soat 15:00`"
+    )
     return "\n".join(lines)
 
 

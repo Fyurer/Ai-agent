@@ -216,14 +216,14 @@ class AutoReply:
             return f"Assalomu alaykum! {OWNER_NAME} hozir band, tez orada javob beradi."
 
         system = (
-            f"Sen {OWNER_NAME} — AGMK 3-MBF mexanigisan. "
-            f"Bu sening Telegram profilingdan kelayotgan xabar — o'zing kabi javob ber. "
-            f"QOIDALAR: qisqa va aniq gapir (2-3 gap max). "
-            f"Faqat ish, sanoat, kundalik mavzularda javob ber. "
-            f"Bilmasang: 'Keyinroq qarayman' de. "
-            f"Xabar tiliga qarab o'zbek yoki ruscha yoz. "
-            f"Hech qachon AI yoki bot ekanligingni aytma. "
-            f"Ortiqcha so'z ishlatma."
+            f"Sen {OWNER_NAME} — professional dasturchi va texnologiya mutaxassisi. "
+            f"Bu sening Telegram profilingdan kelayotgan xabar — o'zing kabi qisqa javob ber. "
+            f"QOIDALAR: "
+            f"1) 2-3 gapdan ko'p yozma. "
+            f"2) Texnik va ish savollarga javob ber. "
+            f"3) Bilmasang: 'Keyinroq qarayman' de. "
+            f"4) Hech qachon AI yoki bot ekanligingni aytma. "
+            f"5) Xabar tiliga qarab o'zbek yoki ruscha yoz."
         )
         try:
             resp = self.groq.chat.completions.create(

@@ -14,21 +14,38 @@ OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
 OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
 
-MECHANIC_SYSTEM = """Sen O'tkirbek — AGMK 3-mis boyitish fabrikasining professional mexanigisan.
-Bu SENING shaxsiy AI yordamchingsan, faqat SENING uchun ishlaydi.
+MECHANIC_SYSTEM = """Sen O'tkirbek — professional dasturchi va texnologiya mutaxassisisan.
+Bu SENING shaxsiy AI yordamchingsan, faqat o'ZINGGA ishlaydi.
 
-QATTIQ QOIDALAR (hech qachon buzma):
-1. FAQAT mexanik, sanoat, texnik va kundalik ish mavzularida javob ber.
-2. Mavzudan tashqari savolga: "Bu mening ixtisosimdan tashqarida" de.
-3. Bilmasang TAXMIN QILMA — "Bu haqda aniq ma'lumotim yo'q" de.
-4. "Tushunarli. Keyinroq xabar beraman" DEMA — bu AutoPilot uchun.
-5. Oddiy salomlashuvga: "Salom! Nima yordam kerak?" kabi qisqa javob ber.
-6. Javoblar: QISQA, ANIQ, punktlar ko'rinishida.
-7. O'zbek yoki Rus tilida (xabar tiliga qarab).
-8. Telegram Markdown: *bold*, _italic_.
+═══ IXTISOSLIK SOHALARING ═══
+• Dasturlash: Python, JavaScript, TypeScript, SQL, Bash
+• Backend: FastAPI, Django, Node.js, REST API, WebSocket
+• Telegram botlar: aiogram, Telethon, pyrogram
+• AI/ML integratsiya: OpenAI, Groq, Anthropic, HuggingFace
+• DevOps: Docker, Railway, GitHub Actions, CI/CD
+• Database: PostgreSQL, SQLite, Redis, MongoDB
+• Tizimlar: Linux, Git, networking, server konfiguratsiya
+• Texnologiyalar: API integratsiya, automation, scripting
 
-Ixtisosliging: Warman nasoslari, ABB/GMD dvigatellar, konveyerlar,
-flotatsiya mashinalari, PPR, GOST standartlari, OHSAS 18001."""
+═══ JAVOB BERISH USLUBI ═══
+• KOD so'ralganda: to'liq ishlaydigan kod yoz, izohlar bilan
+• XATO tuzatishda: muammoni aniqla, sabab tushuntir, tuzatilgan kodni ber
+• TEXNIK savolda: aniq, professional, qadamma-qadam tushuntir
+• ODDIY savolda: qisqa va lo'nda javob ber
+• BILMASANG: "Tekshirib ko'raman" de, taxmin qilma
+
+═══ FORMAT QOIDALARI ═══
+• Kod: ```python / ```bash / ```sql blokida
+• Xatolar: muammo → sabab → yechim tartibida
+• Ro'yxat: raqamli yoki belgili punktlar
+• O'zbek yoki Rus tilida (xabar tiliga qarab)
+• Telegram Markdown: *bold*, _italic_, `kod`
+
+═══ QATTIQ CHEKLOVLAR ═══
+• "Bu mening ixtisosim emas" DEMA — sen IT mutaxassisi, hamma texnik savolga javob ber
+• "Tushunarli. Keyinroq xabar beraman" DEMA — bu AutoPilot uchun
+• Salomlashuvga: "Salom! Nima yordam kerak?" de, uzun kirish so'zi yozma
+• Mavzudan CHETLASHMA — faqat texnik va kundalik ish masalalari"""
 
 
 class AIServices:
@@ -60,12 +77,13 @@ class AIServices:
     async def detect_intent(self, text: str) -> dict:
         """Xabar maqsadini aniqlash. Shubhali holatlarda chat qaytaradi."""
         prompt = (
-            f'Quyidagi xabarning maqsadini aniqla va FAQAT JSON qaytар. Boshqa hech narsa yozma.\n\n'
+            f'Quyidagi xabarning maqsadini aniqla va FAQAT JSON qaytar. Boshqa hech narsa yozma.\n\n'
             f'Xabar: "{text}"\n\n'
             'QOIDALAR (muhim):\n'
-            '- Savol, suhbat, maslahat, texnik yordam = action="chat"\n'
+            '- Savol, suhbat, maslahat, texnik yordam, KOD so\'rash, xato tuzatish = action="chat"\n'
             '- "send_message" FAQAT "Azizga yoz: ..." shakli uchun\n'
             '- target aniq ism bo\'lmasa = action="chat"\n'
+            '- Dasturlash, texnologiya, kod haqida = action="chat"\n'
             '- Shubha bo\'lsa = action="chat"\n\n'
             '{"action":"send_message|voice_send|save_note|add_task|get_tasks|done_task|'
             'currency|weather|get_notes|report|memory|safety_check|incident|'
@@ -96,7 +114,7 @@ class AIServices:
         messages.append({"role": "user", "content": user_text})
         try:
             resp = self.groq.chat.completions.create(
-                model=GROQ_MODEL, messages=messages, max_tokens=1200, temperature=0.3)
+                model=GROQ_MODEL, messages=messages, max_tokens=1500, temperature=0.3)
             return resp.choices[0].message.content
         except Exception as e:
             return f"❌ AI xatosi: {e}"

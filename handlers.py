@@ -88,18 +88,18 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
     async def cmd_start(msg: Message):
         if not is_owner(msg): return
         await msg.answer(
-            f"👋 *Salom, {OWNER_NAME}! Men sizning Raqamli Egizagingizman.*\n\n"
-            f"🏭 _AGMK 3-mis boyitish fabrika mexanigi uchun_\n\n"
-            f"🧠 *AI Stack:* Groq Llama3 + Gemini 1.5 Flash + ElevenLabs\n\n"
+            f"👋 *Salom, {OWNER_NAME}! Men sizning shaxsiy AI yordamchingizman.*\n\n"
+            f"💻 _Professional dasturchi va texnologiya mutaxassisi uchun_\n\n"
+            f"🧠 *AI Stack:* Groq Llama3 + Gemini Flash + ElevenLabs\n\n"
             f"*Nima qila olaman:*\n"
-            f"🔬 Uskunadagi nosozliklarni rasmdan aniqlash\n"
-            f"🦺 HSE auditi — PPE bor-yo'qligini tekshirish\n"
-            f"📊 Sensor ma'lumotlarini tahlil + prognoz\n"
-            f"📐 Chertyo'j o'qish (GOST, o'lchamlar, materiallar)\n"
-            f"📚 MBF-3 bilim bazasi (Warman, GMD/ABB, flotatsiya)\n"
-            f"🤖 AutoPilot — sizning nomingizdan suhbat\n"
-            f"📈 Digital Twin — uskunalar holati dashboard\n"
-            f"🎤 Ovozli xabar (ElevenLabs TTS)\n\n"
+            f"💻 Kod yozish — Python, JS, SQL, Bash va boshqalar\n"
+            f"🐛 Xato tuzatish — debug, error tahlil, tuzatilgan kod\n"
+            f"🤖 Bot va API integratsiya — Telegram, aiogram, REST\n"
+            f"🐳 DevOps — Docker, Railway, CI/CD, server sozlash\n"
+            f"🔬 Rasm tahlili — defekt, HSE, sensor, chizma\n"
+            f"📊 Digital Twin — uskunalar holati dashboard\n"
+            f"🎤 Ovozli xabar va AutoPilot\n"
+            f"📚 Bilim bazasi (RAG qidiruv)\n\n"
             f"/help — barcha buyruqlar ro'yxati"
         )
 
@@ -108,6 +108,13 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
         if not is_owner(msg): return
         await msg.answer(
             "📖 *Buyruqlar:*\n\n"
+            "💻 *KOD VA TEXNOLOGIYA (asosiy):*\n"
+            "`Python kodi yoz: ...` → to'liq ishlaydigan kod\n"
+            "`Xatoni tuzat: [kod]` → debug + tuzatma\n"
+            "`API qanday ulash: ...` → qadamba-qadam\n"
+            "`Docker Compose yoz: ...` → tayyor config\n"
+            "`SQL query: ...` → optimallashtirilgan so'rov\n"
+            "`Bash script: ...` → avtomatlashtirish\n\n"
             "🔬 *VIZUAL TAHLIL (rasm yuboring):*\n"
             "`[rasm] defekt` → nosozlik tahlili\n"
             "`[rasm] hse` → xavfsizlik auditi\n"
@@ -115,38 +122,17 @@ def register_handlers(dp: Dispatcher, db: Database, ai: AIServices,
             "`[rasm] chertyo'j` → kengaytirilgan tahlil\n\n"
             "📊 *DIGITAL TWIN:*\n"
             "`/dashboard` — barcha uskunalar holati\n"
-            "`/equipment` — uskunalar ro'yxati\n"
-            "`Holat: nasos_1, vib=3.2, temp=65` → yangilash\n"
-            "`Prognoz: nasos_1` → AI prognoz\n"
-            "`Tamirlash: nasos_1, turi=TO-2, ish=muhrlar almashtirildi`\n\n"
+            "`/equipment` — uskunalar ro'yxati\n\n"
             "📋 *VAZIFALAR:*\n"
-            "`/tasks` — ro'yxat (rangli vaqt: 🔴🟠🟡⚪)\n"
-            "`/task_add Sarlavha, soat 14:30` — soat bilan\n"
-            "`/task_add Sarlavha, ertaga 09:00` — ertaga\n"
-            "`/task_add Sarlavha, 25.07.2025 10:00` — aniq sana\n"
-            "`/task_add Sarlavha, 2 soatdan keyin`\n"
-            "`Vazifa <N> bajarildi` — yopish\n"
-            "_⏰ Eslatma har 30 soniyada tekshiriladi_\n"
-            "_📅 Briefing: har kuni 12:00 Toshkent vaqtida_\n\n"
+            "`/tasks` — ro'yxat\n"
+            "`/task_add Sarlavha, soat 14:30`\n"
+            "`Vazifa <N> bajarildi`\n\n"
             "📚 *BILIM BAZASI:*\n"
-            "`KB: warman nasos kaviatsiya` → qidiruv\n"
-            "`/kb` — kategoriyalar\n"
-            "[PDF] yuborish → bilim bazasiga qo'shish\n\n"
+            "`KB: <savol>` → RAG qidiruv\n"
+            "[PDF] yuborish → bazaga qo'shish\n\n"
             "🤖 *AUTOPILOT:*\n"
-            "`/autopilot_on` — yoqish (hammaga)\n"
-            "`/autopilot_whitelist` — faqat ruxsatlilarga\n"
-            "`/autopilot_off` — o'chirish\n"
-            "`/autopilot_pause 60` — 60 daqiqa to'xtatish\n"
-            "`/autopilot_status` — holat\n\n"
-            "🔧 *TEXNIK YORDAM:*\n"
-            "`Nasos ishlamayapti` / `Kompressor muammo`\n"
-            "`Elektr ishi xavfsizligi` / `Yong'in chiqdi`\n"
-            "`Gidravlik hisob: sarif=50, diametr=100, uzunlik=200`\n\n"
-            "📋 *HUJJATLAR:*\n"
-            "`Defekt akti:` / `Ish hisoboti:` / `PPR jadvali:`\n\n"
-            "🎤 *OVOZLI XABAR:*\n"
-            "`Azizga ovozli yoz: 15 daqiqa kechikaman`\n\n"
-            "/notes /report /memory /cleanup /voices"
+            "`/autopilot_on` / `/autopilot_off` / `/autopilot_status`\n\n"
+            "/notes /report /memory"
         )
 
     # ── Digital Twin ─────────────────────────────────────────
@@ -1041,12 +1027,27 @@ def quick_intent(text: str) -> tuple:
             if pm: params[key] = float(pm.group(1))
         return ("bearing_calc", params)
 
-    # Qurilma muammolari — FAQAT muammo/nosozlik so'zlari bilan birga
-    problem_words = ['ishlamay','nosoz','muammo','buzil','toxta','xato',
-                     'tekshir','yoqilmay','qizib','vibrats','sizib','tiqil',
-                     'qollanma','haqida ma','kerak','nima qil']
+    # ── Kod va texnologiya so'rovlari (CHAT ga yo'naltirilsin) ──
+    # Bu blok boshqa intent'lardan OLDIN tekshiriladi
+    code_keywords = [
+        'kod', 'code', 'python', 'javascript', 'js', 'typescript', 'sql',
+        'bash', 'script', 'funksiya', 'function', 'class', 'import',
+        'xato', 'error', 'exception', 'bug', 'debug', 'tuzat', 'fix',
+        'api', 'bot', 'telegram', 'aiogram', 'django', 'fastapi',
+        'docker', 'git', 'railway', 'deploy', 'server', 'linux',
+        'database', 'db', 'query', 'select', 'insert', 'update',
+        'loop', 'sikl', 'array', 'list', 'dict', 'json', 'async',
+        'install', 'pip', 'npm', 'requirements', 'library', 'kutubxona',
+        'qanday yoziladi', 'qanday ishlaydi', 'misol', 'namuna', 'yoz',
+        'ko\'rsatma', 'tushuntir', 'nima bu', 'nima uchun',
+    ]
+    if any(kw in tl for kw in code_keywords):
+        return (None, {})   # AI chat ga o'tkazilsin
+
+    # Qurilma muammolari — FAQAT aniq sanoat uskunalari uchun
+    problem_words = ['ishlamay','nosoz','buzil','toxta','vibrats','sizib','tiqil']
     if any(pw in tl for pw in problem_words):
-        for eq in ['nasos','kompressor','konveyer','konveyer','tegirmon','flotatsiya']:
+        for eq in ['nasos','kompressor','konveyer','tegirmon','flotatsiya']:
             if eq in tl:
                 return ("equipment_info", {"equipment": eq})
 
@@ -1293,13 +1294,20 @@ async def process_text(text: str, db: Database, ai: AIServices,
         ai_answer = await ai.chat(text, history, context)
 
         # 2. Agar AI javobi yetarli bo'lmasa — KB dan qo'shimcha ma'lumot qo'sh
-        #    (faqat texnik kalit so'zlar bo'lsa)
+        #    (texnik va IT kalit so'zlar bo'lsa)
         TECH_KEYWORDS = [
+            # Sanoat
             'nasos','kompressor','tegirmon','flotatsiya','konveyer',
             'warman','gmd','npsh','kaviatsiya','muhr','liner','reagent',
             'ksantogenat','gost','vfd','podshipnik','impeller','vibrats',
             'trunnion','stator','rotor','ppr','texnik','nosozlik',
-            'parametr','standart','moy','yog\'','hisob'
+            'parametr','standart','moy','yog\'','hisob',
+            # IT / Dasturlash
+            'python','javascript','typescript','sql','bash','api','bot',
+            'telegram','aiogram','django','fastapi','docker','git',
+            'railway','deploy','server','linux','database','async',
+            'kod','code','funksiya','class','error','bug','debug',
+            'import','library','framework','endpoint','webhook',
         ]
         tl = text.lower()
         is_technical = any(kw in tl for kw in TECH_KEYWORDS)

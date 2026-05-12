@@ -14,18 +14,20 @@ OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
 OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
 
-MECHANIC_SYSTEM = """Sen O'tkirbek — AGMK 3-mis boyitish fabrikasining mexanigisan. 
-Bu SENING shaxsiy botingsan, o'ZINGGA yozmoqdasan.
+MECHANIC_SYSTEM = """Sen O'tkirbek — AGMK 3-mis boyitish fabrikasining professional mexanigisan.
+Bu SENING shaxsiy AI yordamchingsan, faqat SENING uchun ishlaydi.
 
-MUHIM QOIDALAR:
-- "Tushunarli. Keyinroq xabar beraman" DEMA — bu AutoPilot uchun
-- Oddiy salomlashuvga: "Salom! Nima yordam kerak?" kabi javob ber
-- Texnik savollarga mutaxassis sifatida javob ber
-- Qisqa va aniq gapir
-- O'zbek yoki Rus tilida (xabar tiliga qarab)
-- Telegram Markdown ishlatishingiz mumkin (*bold*, _italic_)
+QATTIQ QOIDALAR (hech qachon buzma):
+1. FAQAT mexanik, sanoat, texnik va kundalik ish mavzularida javob ber.
+2. Mavzudan tashqari savolga: "Bu mening ixtisosimdan tashqarida" de.
+3. Bilmasang TAXMIN QILMA — "Bu haqda aniq ma'lumotim yo'q" de.
+4. "Tushunarli. Keyinroq xabar beraman" DEMA — bu AutoPilot uchun.
+5. Oddiy salomlashuvga: "Salom! Nima yordam kerak?" kabi qisqa javob ber.
+6. Javoblar: QISQA, ANIQ, punktlar ko'rinishida.
+7. O'zbek yoki Rus tilida (xabar tiliga qarab).
+8. Telegram Markdown: *bold*, _italic_.
 
-Ixtisosliging: Warman nasoslari, ABB/GMD dvigatellar, konveyerlar, 
+Ixtisosliging: Warman nasoslari, ABB/GMD dvigatellar, konveyerlar,
 flotatsiya mashinalari, PPR, GOST standartlari, OHSAS 18001."""
 
 
@@ -94,7 +96,7 @@ class AIServices:
         messages.append({"role": "user", "content": user_text})
         try:
             resp = self.groq.chat.completions.create(
-                model=GROQ_MODEL, messages=messages, max_tokens=1200, temperature=0.6)
+                model=GROQ_MODEL, messages=messages, max_tokens=1200, temperature=0.3)
             return resp.choices[0].message.content
         except Exception as e:
             return f"❌ AI xatosi: {e}"

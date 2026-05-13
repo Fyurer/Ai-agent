@@ -1286,43 +1286,63 @@ async def process_text(text: str, db: Database, ai: AIServices,
         return await mech.generate_ppr_schedule(data.get("equipment",["nasos"]))
 
     else:
-        # ── AQLLI JAVOB TIZIMI ───────────────────────────────
-        # 1. Avval AI chat bilan javob berish (asosiy)
+        # ════════════════════════════════════════════════════
+        #  YANGI AQLLI JAVOB TIZIMI v2.0
+        #  1. Xotira + tarix olish
+        #  2. Semantic RAG — vector qidiruv (FTS + TF-IDF)
+        #  3. Prompt Chaining — 3 bosqich (intent→javob→filtr)
+        #  4. PersonalTwin fallback
+        # ════════════════════════════════════════════════════
+
+        # ── 1. Kontekst yig'ish ──────────────────────────────
         memories = await db.get_relevant_memories(text)
-        context  = "\n".join(f"• {m}" for m in memories) if memories else ""
+        mem_ctx  = "\n".join(f"• {m}" for m in memories) if memories else ""
         history  = await db.get_conversation_history()
-        ai_answer = await ai.chat(text, history, context)
 
-        # 2. Agar AI javobi yetarli bo'lmasa — KB dan qo'shimcha ma'lumot qo'sh
-        #    (texnik va IT kalit so'zlar bo'lsa)
-        TECH_KEYWORDS = [
-            # Sanoat
-            'nasos','kompressor','tegirmon','flotatsiya','konveyer',
-            'warman','gmd','npsh','kaviatsiya','muhr','liner','reagent',
-            'ksantogenat','gost','vfd','podshipnik','impeller','vibrats',
-            'trunnion','stator','rotor','ppr','texnik','nosozlik',
-            'parametr','standart','moy','yog\'','hisob',
-            # IT / Dasturlash
-            'python','javascript','typescript','sql','bash','api','bot',
-            'telegram','aiogram','django','fastapi','docker','git',
-            'railway','deploy','server','linux','database','async',
-            'kod','code','funksiya','class','error','bug','debug',
-            'import','library','framework','endpoint','webhook',
-        ]
-        tl = text.lower()
-        is_technical = any(kw in tl for kw in TECH_KEYWORDS)
+        # ── 2. Semantic RAG — parallel qidiruv ───────────────
+        #  a) FTS5 (an'anaviy) + b) Semantic vector
+        combined_context = mem_ctx
 
-        if is_technical:
-            kb_context = await kb.get_rag_context(text)
-            if kb_context:
-                # KB ma'lumoti bor — AI ga qayta yubor, kontekst bilan
-                enhanced = await ai.chat(
-                    text, history,
-                    context + ("\n\n📚 Texnik bilim bazasi:\n" + kb_context if kb_context else "")
-                )
-                return enhanced
+        # a) FTS qidiruv (KB.get_rag_context — tezkor)
+        fts_ctx = await kb.get_rag_context(text)
 
-        # 3. PersonalTwin — tayyor bo'lganda
+        # b) Semantic vector qidiruv (AIServices.semantic_rag)
+        #    KB docs ni bir marta yuklash (lazy init)
+        try:
+            from knowledge_base import MBF3_KNOWLEDGE
+            sem_ctx = await ai.semantic_search(text, MBF3_KNOWLEDGE)
+        except Exception as _rag_err:
+            log.warning(f"Semantic RAG xatosi: {_rag_err}")
+            sem_ctx = ""
+
+        # Ikki RAG natijasini birlashtirish (duplicate bo'lmaslik uchun)
+        rag_parts = []
+        if fts_ctx:
+            rag_parts.append(fts_ctx)
+        if sem_ctx and sem_ctx not in fts_ctx:
+            rag_parts.append(sem_ctx)
+
+        if rag_parts:
+            rag_block = "\n\n---\n\n".join(rag_parts)
+            combined_context = (
+                (mem_ctx + "\n\n" if mem_ctx else "") +
+                "📚 Texnik bilim bazasi:\n" + rag_block
+            )
+
+        # ── 3. Prompt Chaining — 3 bosqich ───────────────────
+        try:
+            # chat_v2 ichida: intent → generate → filter
+            answer = await ai.chat_v2(text, history, combined_context)
+            if answer and len(answer) > 3:
+                return answer
+        except Exception as _chain_err:
+            log.warning(f"Prompt chain xatosi: {_chain_err}")
+            # Xato bo'lsa oddiy chat ga tushish
+            answer = await ai.chat(text, history, combined_context)
+            if answer:
+                return answer
+
+        # ── 4. PersonalTwin fallback ─────────────────────────
         if personal_twin:
             try:
                 stats = await personal_twin.get_stats()
@@ -1333,7 +1353,8 @@ async def process_text(text: str, db: Database, ai: AIServices,
             except Exception as _pt_err:
                 log.warning(f"PersonalTwin xatosi: {_pt_err}")
 
-        return ai_answer
+        # ── 5. So'nggi fallback ──────────────────────────────
+        return await ai.chat(text, history, mem_ctx)
 
 
 # ════════════════════════════════════════════════════════════
